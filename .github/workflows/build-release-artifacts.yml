@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -123,3 +123,11 @@ jobs:
             ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-x64.msi
             ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-x64.msix
           if-no-files-found: error
+
+      - name: Create draft GitHub Release and upload assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: dist/*
+          fail_on_unmatched_files: true
