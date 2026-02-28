@@ -6,7 +6,7 @@
         Height="800"
         WindowStartupLocation="CenterScreen"
         Background="#1E1E1E">
-    <Grid>
+    <Grid x:Name="RootGrid">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="260"/>
             <ColumnDefinition Width="Auto"/>
@@ -14,7 +14,7 @@
         </Grid.ColumnDefinitions>
 
         <!-- Left panel: window picker -->
-        <DockPanel Grid.Column="0" Margin="6">
+        <DockPanel Grid.Column="0" x:Name="LeftPanel" Margin="6">
             <TextBlock DockPanel.Dock="Top"
                        Text="🔍 Filter windows:"
                        Foreground="#CCC" Margin="0,0,0,4" FontSize="13"/>
@@ -23,7 +23,7 @@
                      Margin="0,0,0,6"/>
             <TextBlock DockPanel.Dock="Bottom"
                        x:Name="HintText"
-                       Text="Double-click → assign to grid.&#x0a;Right-click cell → clear.&#x0a;Left-click cell → maximize / restore."
+                       Text="Double-click → assign to grid.&#x0a;Right-click cell → remove.&#x0a;Left-click cell → maximize / restore.&#x0a;Enter → fullscreen / Esc → exit."
                        Foreground="#888" FontSize="11" TextWrapping="Wrap"
                        Margin="0,6,0,0"/>
             <ListBox x:Name="WindowList"
@@ -32,20 +32,11 @@
                      DisplayMemberPath="Title"/>
         </DockPanel>
 
-        <GridSplitter Grid.Column="1" Width="4"
+        <GridSplitter Grid.Column="1" x:Name="Splitter" Width="4"
                       HorizontalAlignment="Center" VerticalAlignment="Stretch"
                       Background="#444"/>
 
-        <!-- Right panel: 2×2 thumbnail grid (cells built in code-behind) -->
-        <Grid Grid.Column="2" x:Name="ThumbGrid" Margin="4">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-        </Grid>
+        <!-- Right panel: flexible thumbnail grid (rows/cols managed in code-behind) -->
+        <Grid Grid.Column="2" x:Name="ThumbGrid" Margin="4"/>
     </Grid>
 </Window>
