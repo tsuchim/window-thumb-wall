@@ -491,6 +491,8 @@ public partial class MainWindow : Window
 
     // ── Fullscreen ───────────────────────────────────────────────
 
+    private void FullScreenButton_Click(object sender, RoutedEventArgs e) => ToggleFullScreen();
+
     private void ToggleFullScreen()
     {
         if (_isFullScreen)

@@ -23,9 +23,15 @@
                      Margin="0,0,0,6"/>
             <TextBlock DockPanel.Dock="Bottom"
                        x:Name="HintText"
-                       Text="Double-click → assign to grid.&#x0a;Left-click cell → activate window.&#x0a;Right-click cell → remove.&#x0a;Enter → fullscreen / Esc → exit."
+                       Text="Double-click → assign to grid.&#x0a;Left-click cell → activate window.&#x0a;Right-click cell → remove."
                        Foreground="#888" FontSize="11" TextWrapping="Wrap"
                        Margin="0,6,0,0"/>
+            <Button DockPanel.Dock="Bottom"
+                    x:Name="FullScreenButton"
+                    Content="⛶ Fullscreen (Enter)"
+                    Click="FullScreenButton_Click"
+                    Background="#444" Foreground="White" BorderThickness="0"
+                    Padding="8,6" Margin="0,6,0,0" FontSize="13" Cursor="Hand"/>
             <ListBox x:Name="WindowList"
                      Background="#2D2D2D" Foreground="White"
                      BorderThickness="0"
@@ -40,3 +46,4 @@
         <Grid Grid.Column="2" x:Name="ThumbGrid" Margin="4"/>
     </Grid>
 </Window>
+    
