@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 $root     = Split-Path $PSScriptRoot -Parent
 $pubDir   = Join-Path $root "publish-msix"
 $pkgDir   = Join-Path $root "packaging"
-$outMsix  = Join-Path $root "WindowThumbWall-v0.1-win-x64.msix"
+$outMsix  = Join-Path $root "WindowThumbWall-v0.2-win-x64.msix"
 
 # ── 1. Publish self-contained ────────────────────────────────
 Write-Host ">> Publishing..." -ForegroundColor Cyan
@@ -36,15 +36,22 @@ Write-Host ">> Creating MSIX..." -ForegroundColor Cyan
 if (Test-Path $outMsix) { Remove-Item $outMsix -Force }
 & $makeappx pack /d $pubDir /p $outMsix /o
 
-# ── 5. Sign with certificate from CurrentUser\My ─────────────
-Write-Host ">> Signing MSIX..." -ForegroundColor Cyan
-$cert = Get-ChildItem Cert:\CurrentUser\My |
+# ── 5. Sign with certificate from CurrentUser\My (optional) ──
+Write-Host ">> Attempting to sign MSIX..." -ForegroundColor Cyan
+$cert = Get-ChildItem Cert:\CurrentUser\My -ErrorAction SilentlyContinue |
         Where-Object { $_.Subject -eq $CertSubject -and $_.NotAfter -gt (Get-Date) } |
         Select-Object -First 1
 
-if (-not $cert) { throw "Certificate '$CertSubject' not found in CurrentUser\My" }
-
-& $signtool sign /fd SHA256 /sha1 $cert.Thumbprint /td SHA256 $outMsix
+if (-not $cert) {
+    Write-Host ">> WARNING: Certificate '$CertSubject' not found — MSIX is UNSIGNED." -ForegroundColor Yellow
+} else {
+    & $signtool sign /fd SHA256 /sha1 $cert.Thumbprint /td SHA256 $outMsix
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ">> WARNING: Signing failed — MSIX is UNSIGNED." -ForegroundColor Yellow
+    } else {
+        Write-Host ">> Signed successfully." -ForegroundColor Green
+    }
+}
 
 # ── Done ──────────────────────────────────────────────────────
 $size = [math]::Round((Get-Item $outMsix).Length / 1MB, 1)
