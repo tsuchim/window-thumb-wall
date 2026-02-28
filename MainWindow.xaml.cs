@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
 namespace WindowThumbWall;
@@ -27,6 +28,12 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly List<WindowInfo> _windowCache = [];
 
+    private uint _shellHookMsgId;
+    private readonly HashSet<IntPtr> _flashingWindows = [];
+    private static readonly SolidColorBrush NormalBorderBrush =
+        new(Color.FromRgb(0x55, 0x55, 0x55));
+    static MainWindow() => NormalBorderBrush.Freeze();
+
     public MainWindow()
     {
         InitializeComponent();
@@ -44,12 +51,19 @@ public partial class MainWindow : Window
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         _mainHwnd = new WindowInteropHelper(this).Handle;
+
+        // Register for shell hook messages (flash / activation).
+        _shellHookMsgId = NativeMethods.RegisterWindowMessage("SHELLHOOK");
+        NativeMethods.RegisterShellHookWindow(_mainHwnd);
+        HwndSource.FromHwnd(_mainHwnd)?.AddHook(WndProc);
+
         _timer.Start();
     }
 
     private void OnClosed(object? sender, EventArgs e)
     {
         _timer.Stop();
+        NativeMethods.DeregisterShellHookWindow(_mainHwnd);
         foreach (var slot in _slots) slot.Clear();
     }
 
@@ -138,6 +152,7 @@ public partial class MainWindow : Window
     {
         if (_maximizedIndex >= 0) RestoreGrid();
 
+        _flashingWindows.Remove(_slots[idx].SourceHwnd);
         _slots[idx].Clear();
         ThumbGrid.Children.Remove(_cellBorders[idx]);
         _cellHosts[idx].Dispose();
@@ -185,6 +200,7 @@ public partial class MainWindow : Window
     {
         RefreshWindowList();
         ValidateSlots();
+        CheckFlashState();
         UpdateAllThumbnails();
     }
 
@@ -317,6 +333,96 @@ public partial class MainWindow : Window
         if (sender is not Border { Tag: int idx }) return;
         if (idx < _slots.Count)
             RemoveSlot(idx);
+    }
+
+    // ── Flash detection (shell hook) ─────────────────────────────
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == (int)_shellHookMsgId)
+        {
+            int shellEvent = wParam.ToInt32();
+            IntPtr targetHwnd = lParam;
+
+            if (shellEvent == NativeMethods.HSHELL_FLASH)
+            {
+                OnWindowFlash(targetHwnd);
+            }
+            else if ((shellEvent & 0x7FFF) == NativeMethods.HSHELL_WINDOWACTIVATED)
+            {
+                OnWindowActivated(targetHwnd);
+            }
+        }
+        return IntPtr.Zero;
+    }
+
+    private void OnWindowFlash(IntPtr hwnd)
+    {
+        for (int i = 0; i < _slots.Count; i++)
+        {
+            if (_slots[i].IsOccupied && _slots[i].SourceHwnd == hwnd)
+            {
+                if (_flashingWindows.Add(hwnd))
+                    StartFlashBorder(i);
+                return;
+            }
+        }
+    }
+
+    private void OnWindowActivated(IntPtr hwnd)
+    {
+        if (_flashingWindows.Remove(hwnd))
+        {
+            for (int i = 0; i < _slots.Count; i++)
+            {
+                if (_slots[i].IsOccupied && _slots[i].SourceHwnd == hwnd)
+                {
+                    StopFlashBorder(i);
+                    return;
+                }
+            }
+        }
+    }
+
+    private void CheckFlashState()
+    {
+        if (_flashingWindows.Count == 0) return;
+        IntPtr fg = NativeMethods.GetForegroundWindow();
+        if (_flashingWindows.Remove(fg))
+        {
+            for (int i = 0; i < _slots.Count; i++)
+            {
+                if (_slots[i].IsOccupied && _slots[i].SourceHwnd == fg)
+                {
+                    StopFlashBorder(i);
+                    return;
+                }
+            }
+        }
+    }
+
+    private static void StartFlashBorder(Border border)
+    {
+        var brush = new SolidColorBrush(Colors.Red);
+        var anim = new ColorAnimation
+        {
+            From = Colors.Red,
+            To = Color.FromArgb(0x40, 0xFF, 0x00, 0x00),
+            Duration = TimeSpan.FromMilliseconds(400),
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever
+        };
+        brush.BeginAnimation(SolidColorBrush.ColorProperty, anim);
+        border.BorderBrush = brush;
+        border.BorderThickness = new Thickness(3);
+    }
+
+    private void StartFlashBorder(int idx) => StartFlashBorder(_cellBorders[idx]);
+
+    private void StopFlashBorder(int idx)
+    {
+        _cellBorders[idx].BorderBrush = NormalBorderBrush;
+        _cellBorders[idx].BorderThickness = new Thickness(1);
     }
 
     // ── Fullscreen ───────────────────────────────────────────────

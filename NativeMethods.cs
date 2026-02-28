@@ -48,6 +48,27 @@ internal static class NativeMethods
     internal const int GWL_EXSTYLE          = -20;
     internal const uint WS_EX_TOOLWINDOW    = 0x00000080;
 
+    // ── Shell hook (flash / activation detection) ────────────────
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool RegisterShellHookWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool DeregisterShellHookWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    internal static extern uint RegisterWindowMessage(string lpString);
+
+    [DllImport("user32.dll")]
+    internal static extern IntPtr GetForegroundWindow();
+
+    internal const int HSHELL_WINDOWACTIVATED = 4;
+    internal const int HSHELL_REDRAW          = 6;
+    internal const int HSHELL_HIGHBIT         = 0x8000;
+    internal const int HSHELL_FLASH           = HSHELL_REDRAW | HSHELL_HIGHBIT;
+
     // ── HWND creation (for ThumbHost) ────────────────────────────
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
