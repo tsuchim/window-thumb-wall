@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="WindowThumbWall"
+           Manufacturer="tsuchim"
+           Version="0.2.0.0"
+           UpgradeCode="a3f2b8c1-7d4e-4f6a-9e5b-1c8d3a2f7e9b"
+           Compressed="yes"
+           InstallerVersion="500">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of WindowThumbWall is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Install directory -->
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="WindowThumbWall" />
+    </StandardDirectory>
+
+    <!-- Harvest all published files -->
+    <ComponentGroup Id="ProductFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(PublishDir)\**" />
+    </ComponentGroup>
+
+    <!-- Start Menu shortcut -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ShortcutDir" Name="WindowThumbWall">
+        <Component Id="StartMenuShortcut" Guid="d7e1f930-52a4-4b8c-ae67-3c9f0b1d5e42">
+          <Shortcut Id="MainShortcut"
+                    Name="WindowThumbWall"
+                    Target="[INSTALLFOLDER]WindowThumbWall.exe"
+                    WorkingDirectory="INSTALLFOLDER" />
+          <RemoveFolder Id="RemoveShortcutDir" On="uninstall" />
+          <RegistryValue Root="HKCU" Key="Software\tsuchim\WindowThumbWall"
+                         Name="installed" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Level="1" Title="WindowThumbWall"
+             Description="Live DWM thumbnail wall for external windows">
+      <ComponentGroupRef Id="ProductFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+
+    <!-- Standard install-dir wizard UI -->
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+
+  </Package>
+</Wix>

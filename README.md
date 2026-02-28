@@ -39,6 +39,28 @@ selected external windows in a flexible grid layout — no screen capture, no OB
 | `WindowInfo.cs` | Data class for window-list items |
 | `MainWindow.xaml/.cs` | UI layout and main logic |
 
+## Download
+
+| Format | File | Notes |
+|--------|------|-------|
+| **ZIP** | `WindowThumbWall-v0.2-win-x64.zip` | Portable — extract and run |
+| **MSI** | `WindowThumbWall-v0.2-win-x64.msi` | Traditional installer (Program Files + Start Menu) |
+| **MSIX** | `WindowThumbWall-v0.2-win-x64.msix` | Modern package (requires sideloading or trusted cert) |
+
+All packages are **self-contained** (no .NET runtime install required).
+
+## Building Packages
+
+```powershell
+# Build all formats at once
+.\packaging\build-all.ps1
+
+# Or individually
+.\packaging\build-zip.ps1
+.\packaging\build-msi.ps1    # requires WiX v5 (auto-installed)
+.\packaging\build-msix.ps1   # requires Windows SDK
+```
+
 ## Requirements
 
 - **Windows 10** or later (Desktop Window Manager required)

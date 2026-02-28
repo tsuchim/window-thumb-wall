@@ -19,3 +19,7 @@ Thumbs.db
 # Publish / packaging outputs
 publish-*/
 *.msix
+*.msi
+*.zip
+*.wixpdb
+cab*.cab
