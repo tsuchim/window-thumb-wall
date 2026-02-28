@@ -1,5 +1,7 @@
 # WindowThumbWall
 
+[日本語 (README.ja.md)](README.ja.md)
+
 A WPF desktop application (.NET 10) that displays **live DWM thumbnails** of
 selected external windows in a flexible grid layout — no screen capture, no OBS.
 
@@ -49,6 +51,15 @@ selected external windows in a flexible grid layout — no screen capture, no OB
 
 All packages are **self-contained** (no .NET runtime install required).
 
+## Code signing / security note
+
+The distributed binaries are **not signed with a public (commercial) code signing certificate**.
+
+- **ZIP / MSI**: typically **unsigned**.
+- **MSIX**: may be **unsigned** or signed with a **self-signed/test certificate**.
+
+Depending on your environment, Windows SmartScreen / Defender may show warnings.
+
 ## Building Packages
 
 ```powershell
@@ -57,7 +68,7 @@ All packages are **self-contained** (no .NET runtime install required).
 
 # Or individually
 .\packaging\build-zip.ps1
-.\packaging\build-msi.ps1    # requires WiX v5 (auto-installed)
+.\packaging\build-msi.ps1    # requires WiX (auto-installed)
 .\packaging\build-msix.ps1   # requires Windows SDK
 ```
 
