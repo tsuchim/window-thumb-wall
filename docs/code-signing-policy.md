@@ -18,12 +18,18 @@ This is a single-maintainer project. All roles are held by **@tsuchim**.
 
 ## Signing Process
 
-1. Release builds are triggered by GPG-signed tags matching `v*`
-   (`git tag -s vX.Y`).
+1. Release builds are triggered by tags matching `v*`.
+   Maintainers **must** GPG-sign release tags (`git tag -s vX.Y`).
+   > Note: GPG signature is an operational requirement.
+   > The workflow does not technically verify tag signatures.
 2. Builds run on **GitHub Actions** (`windows-latest`).
-3. Only **CI-built artifacts** are published in GitHub Releases.
-4. **No manually-built binaries are distributed.**
-5. Once SignPath integration is complete, CI artifacts will be submitted to
+3. CI builds produce **ZIP**, **MSI**, and **MSIX** artifacts and upload them
+   as workflow artifacts.
+4. Publishing to **GitHub Releases** is currently performed **manually**:
+   download CI-built artifacts from the workflow run and attach them as
+   release assets.
+5. **No locally or manually-built binaries are distributed.**
+6. Once SignPath integration is complete, CI artifacts will be submitted to
    SignPath for signing before publication.
 
 ## Security

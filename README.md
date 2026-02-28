@@ -53,8 +53,10 @@ All packages are **self-contained** (no .NET runtime install required).
 
 ## Security / Code Signing
 
-Release artifacts are built exclusively on **GitHub Actions** from GPG-signed
-tags — only CI-built binaries are distributed.
+Official release artifacts are built on **GitHub Actions** from version tags
+(`v*`) — only CI-built binaries are distributed.
+The workflow also runs on pull requests and manual dispatch for validation,
+but only tag-triggered builds are used for releases.
 
 Code signing via [SignPath Foundation](https://signpath.org/) is **planned**.
 Until signing is integrated, binaries are distributed **unsigned** and Windows
@@ -66,7 +68,7 @@ See [Code Signing Policy](docs/code-signing-policy.md) for details.
 
 1. Create a GPG-signed tag (`git tag -s vX.Y`)
 2. Push the tag — GitHub Actions builds ZIP, MSI, and MSIX artifacts
-3. Only CI-built artifacts are attached to GitHub Releases
+3. Download CI artifacts and manually attach them to a GitHub Release
 
 See [docs/releasing.md](docs/releasing.md) for the full process.
 
