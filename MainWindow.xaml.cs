@@ -16,12 +16,15 @@ public partial class MainWindow : Window
 
     private readonly List<Border> _cellBorders = [];
     private readonly List<TextBlock> _cellLabels = [];
-    private readonly List<Border> _cellTitleBars = [];
+    private readonly List<Border> _cellHitLayers = [];
     private readonly List<ThumbHost> _cellHosts = [];
     private readonly List<ThumbnailSlot> _slots = [];
 
     private Point _dragStartPoint;
     private int _dragSourceIndex = -1;
+    private bool _dragMoved;
+    private Border? _dropPreviewLayer;
+    private Window? _dragGhost;
 
     private bool _isFullScreen;
     private WindowStyle _savedWindowStyle;
@@ -220,15 +223,8 @@ public partial class MainWindow : Window
         {
             Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)),
             Child = label,
-            Cursor = Cursors.SizeAll,
-            Tag = idx,
-            AllowDrop = true
+            Cursor = Cursors.Arrow
         };
-        titleBar.PreviewMouseLeftButtonDown += TitleBar_PreviewMouseLeftButtonDown;
-        titleBar.PreviewMouseMove += TitleBar_PreviewMouseMove;
-        titleBar.PreviewMouseLeftButtonUp += TitleBar_PreviewMouseLeftButtonUp;
-        titleBar.DragOver += TitleBar_DragOver;
-        titleBar.Drop += TitleBar_Drop;
         DockPanel.SetDock(titleBar, Dock.Top);
 
         var host = new ThumbHost();
@@ -237,23 +233,40 @@ public partial class MainWindow : Window
         panel.Children.Add(titleBar);
         panel.Children.Add(host);
 
+        var hitLayer = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(1, 255, 255, 255)),
+            Tag = idx,
+            Cursor = Cursors.Hand,
+            AllowDrop = true
+        };
+        hitLayer.PreviewMouseLeftButtonDown += Cell_PreviewMouseLeftButtonDown;
+        hitLayer.PreviewMouseMove += Cell_PreviewMouseMove;
+        hitLayer.PreviewMouseLeftButtonUp += Cell_PreviewMouseLeftButtonUp;
+        hitLayer.MouseRightButtonDown += Cell_RightClick;
+        hitLayer.DragOver += Cell_DragOver;
+        hitLayer.Drop += Cell_Drop;
+        hitLayer.DragLeave += Cell_DragLeave;
+
+        var cellRoot = new Grid();
+        cellRoot.Children.Add(panel);
+        cellRoot.Children.Add(hitLayer);
+
         var border = new Border
         {
             BorderBrush = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
             BorderThickness = new Thickness(1),
             Margin = new Thickness(2),
             Background = Brushes.Black,
-            Child = panel,
+            Child = cellRoot,
             Tag = idx,
-            Cursor = Cursors.Hand
+            Cursor = Cursors.Arrow
         };
-        border.MouseLeftButtonDown += Cell_LeftClick;
-        border.MouseRightButtonDown += Cell_RightClick;
 
         ThumbGrid.Children.Add(border);
         _cellBorders.Add(border);
         _cellLabels.Add(label);
-        _cellTitleBars.Add(titleBar);
+        _cellHitLayers.Add(hitLayer);
         _cellHosts.Add(host);
 
         RebuildGrid();
@@ -274,14 +287,14 @@ public partial class MainWindow : Window
 
         _cellBorders.RemoveAt(idx);
         _cellLabels.RemoveAt(idx);
-        _cellTitleBars.RemoveAt(idx);
+        _cellHitLayers.RemoveAt(idx);
         _cellHosts.RemoveAt(idx);
         _slots.RemoveAt(idx);
 
         for (int i = 0; i < _cellBorders.Count; i++)
         {
             _cellBorders[i].Tag = i;
-            _cellTitleBars[i].Tag = i;
+            _cellHitLayers[i].Tag = i;
         }
 
         RebuildGrid();
@@ -403,17 +416,64 @@ public partial class MainWindow : Window
             slot.UpdateThumbnail();
     }
 
-    // ── Activate source window ────────────────────────────────────
+    // ── Cell interaction (click / menu / drag reorder) ───────────
 
-    private void Cell_LeftClick(object sender, MouseButtonEventArgs e)
+    private void ActivateSlotWindow(int idx)
     {
-        if (sender is not Border { Tag: int idx }) return;
         if (idx >= _slots.Count || !_slots[idx].IsOccupied) return;
-
         IntPtr hwnd = _slots[idx].SourceHwnd;
         if (NativeMethods.IsIconic(hwnd))
             NativeMethods.ShowWindow(hwnd, NativeMethods.SW_RESTORE);
         NativeMethods.SetForegroundWindow(hwnd);
+    }
+
+    private void Cell_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Border { Tag: int idx }) return;
+        _dragSourceIndex = idx;
+        _dragStartPoint = e.GetPosition(this);
+        _dragMoved = false;
+        ((UIElement)sender).CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void Cell_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_dragSourceIndex < 0 || sender is not UIElement element) return;
+        if (e.LeftButton != MouseButtonState.Pressed) return;
+
+        Point current = e.GetPosition(this);
+        Vector delta = current - _dragStartPoint;
+        if (!_dragMoved &&
+            Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance)
+            return;
+
+        _dragMoved = true;
+        int sourceIndex = _dragSourceIndex;
+        _dragSourceIndex = -1;
+        element.ReleaseMouseCapture();
+
+        ShowDragGhost(sourceIndex, current);
+        SetDropPreviewLayer(null);
+
+        DragDrop.DoDragDrop(element, new DataObject(SlotDragFormat, sourceIndex), DragDropEffects.Move);
+
+        HideDragGhost();
+        SetDropPreviewLayer(null);
+    }
+
+    private void Cell_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Border { Tag: int idx }) return;
+        ((UIElement)sender).ReleaseMouseCapture();
+
+        if (!_dragMoved)
+            ActivateSlotWindow(idx);
+
+        _dragSourceIndex = -1;
+        _dragMoved = false;
+        e.Handled = true;
     }
 
     private void Cell_RightClick(object sender, MouseButtonEventArgs e)
@@ -422,27 +482,11 @@ public partial class MainWindow : Window
 
         var menu = new ContextMenu();
 
-        var clearItem = new MenuItem
-        {
-            Header = "選択解除",
-            IsEnabled = idx < _slots.Count
-        };
-        clearItem.Click += (_, _) =>
-        {
-            if (idx < _slots.Count)
-                RemoveSlot(idx);
-        };
+        var clearItem = new MenuItem { Header = "選択解除", IsEnabled = idx < _slots.Count };
+        clearItem.Click += (_, _) => { if (idx < _slots.Count) RemoveSlot(idx); };
 
-        var exitFullScreenItem = new MenuItem
-        {
-            Header = "全画面解除",
-            IsEnabled = _isFullScreen
-        };
-        exitFullScreenItem.Click += (_, _) =>
-        {
-            if (_isFullScreen)
-                ToggleFullScreen();
-        };
+        var exitFullScreenItem = new MenuItem { Header = "全画面解除", IsEnabled = _isFullScreen };
+        exitFullScreenItem.Click += (_, _) => { if (_isFullScreen) ToggleFullScreen(); };
 
         menu.Items.Add(clearItem);
         menu.Items.Add(exitFullScreenItem);
@@ -451,72 +495,129 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void TitleBar_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private void Cell_DragOver(object sender, DragEventArgs e)
     {
-        if (sender is not Border { Tag: int idx }) return;
-        _dragSourceIndex = idx;
-        _dragStartPoint = e.GetPosition(this);
-        ((UIElement)sender).CaptureMouse();
+        if (!e.Data.GetDataPresent(SlotDragFormat) || sender is not Border targetLayer)
+        {
+            e.Effects = DragDropEffects.None;
+            return;
+        }
+
+        e.Effects = DragDropEffects.Move;
+        SetDropPreviewLayer(targetLayer);
+        UpdateDragGhostPosition(e.GetPosition(this));
         e.Handled = true;
     }
 
-    private void TitleBar_PreviewMouseMove(object sender, MouseEventArgs e)
+    private void Cell_DragLeave(object sender, DragEventArgs e)
     {
-        if (_dragSourceIndex < 0 || sender is not UIElement element) return;
-        if (e.LeftButton != MouseButtonState.Pressed) return;
+        if (sender == _dropPreviewLayer)
+            SetDropPreviewLayer(null);
+    }
 
-        Point current = e.GetPosition(this);
-        Vector delta = current - _dragStartPoint;
-        if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
-            Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance)
+    private void Cell_Drop(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(SlotDragFormat) || sender is not Border { Tag: int targetIndex })
             return;
 
-        var sourceIndex = _dragSourceIndex;
-        _dragSourceIndex = -1;
-        element.ReleaseMouseCapture();
-        DragDrop.DoDragDrop(element, new DataObject(SlotDragFormat, sourceIndex), DragDropEffects.Move);
-    }
-
-    private void TitleBar_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-    {
-        _dragSourceIndex = -1;
-        ((UIElement)sender).ReleaseMouseCapture();
-    }
-
-    private static void TitleBar_DragOver(object sender, DragEventArgs e)
-    {
-        e.Effects = e.Data.GetDataPresent(SlotDragFormat) ? DragDropEffects.Move : DragDropEffects.None;
-        e.Handled = true;
-    }
-
-    private void TitleBar_Drop(object sender, DragEventArgs e)
-    {
-        if (!e.Data.GetDataPresent(SlotDragFormat)) return;
-        if (sender is not Border { Tag: int targetIndex }) return;
-
         int sourceIndex = (int)e.Data.GetData(SlotDragFormat)!;
-        if (sourceIndex < 0 || sourceIndex >= _slots.Count) return;
-        if (targetIndex < 0 || targetIndex >= _slots.Count) return;
-        if (sourceIndex == targetIndex) return;
+        if (sourceIndex >= 0 && sourceIndex < _slots.Count &&
+            targetIndex >= 0 && targetIndex < _slots.Count &&
+            sourceIndex != targetIndex)
+        {
+            SwapSlots(sourceIndex, targetIndex);
+        }
 
-        SwapSlots(sourceIndex, targetIndex);
+        SetDropPreviewLayer(null);
+        e.Handled = true;
     }
 
     private void SwapSlots(int i, int j)
     {
         (_cellBorders[i], _cellBorders[j]) = (_cellBorders[j], _cellBorders[i]);
         (_cellLabels[i], _cellLabels[j]) = (_cellLabels[j], _cellLabels[i]);
-        (_cellTitleBars[i], _cellTitleBars[j]) = (_cellTitleBars[j], _cellTitleBars[i]);
+        (_cellHitLayers[i], _cellHitLayers[j]) = (_cellHitLayers[j], _cellHitLayers[i]);
         (_cellHosts[i], _cellHosts[j]) = (_cellHosts[j], _cellHosts[i]);
         (_slots[i], _slots[j]) = (_slots[j], _slots[i]);
 
         for (int idx = 0; idx < _cellBorders.Count; idx++)
         {
             _cellBorders[idx].Tag = idx;
-            _cellTitleBars[idx].Tag = idx;
+            _cellHitLayers[idx].Tag = idx;
         }
 
         RebuildGrid();
+    }
+
+    private static readonly Brush DefaultHitLayerBrush =
+        new SolidColorBrush(Color.FromArgb(1, 255, 255, 255));
+
+    private static readonly Brush PreviewHitLayerBrush =
+        new SolidColorBrush(Color.FromArgb(70, 80, 160, 255));
+
+    private void SetDropPreviewLayer(Border? layer)
+    {
+        if (_dropPreviewLayer != null)
+            _dropPreviewLayer.Background = DefaultHitLayerBrush;
+
+        _dropPreviewLayer = layer;
+
+        if (_dropPreviewLayer != null)
+            _dropPreviewLayer.Background = PreviewHitLayerBrush;
+    }
+
+    private void ShowDragGhost(int sourceIndex, Point windowPoint)
+    {
+        HideDragGhost();
+
+        var ghostBorder = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(180, 20, 20, 20)),
+            BorderBrush = Brushes.DodgerBlue,
+            BorderThickness = new Thickness(2),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(10),
+            Child = new TextBlock
+            {
+                Text = _cellLabels[sourceIndex].Text,
+                Foreground = Brushes.White,
+                FontSize = 12,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Width = 240
+            }
+        };
+
+        _dragGhost = new Window
+        {
+            Width = 270,
+            Height = 48,
+            WindowStyle = WindowStyle.None,
+            AllowsTransparency = true,
+            Background = Brushes.Transparent,
+            ShowInTaskbar = false,
+            Topmost = true,
+            IsHitTestVisible = false,
+            Content = ghostBorder,
+            Opacity = 0.85
+        };
+
+        UpdateDragGhostPosition(windowPoint);
+        _dragGhost.Show();
+    }
+
+    private void UpdateDragGhostPosition(Point windowPoint)
+    {
+        if (_dragGhost == null) return;
+        Point screen = PointToScreen(windowPoint);
+        _dragGhost.Left = screen.X + 12;
+        _dragGhost.Top = screen.Y + 12;
+    }
+
+    private void HideDragGhost()
+    {
+        if (_dragGhost == null) return;
+        _dragGhost.Close();
+        _dragGhost = null;
     }
 
     // ── Flash detection (shell hook) ─────────────────────────────
