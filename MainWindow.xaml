@@ -23,7 +23,7 @@
                      Margin="0,0,0,6"/>
             <TextBlock DockPanel.Dock="Bottom"
                        x:Name="HintText"
-                       Text="Double-click → assign to grid.&#x0a;Right-click cell → remove.&#x0a;Left-click cell → maximize / restore.&#x0a;Enter → fullscreen / Esc → exit."
+                       Text="Double-click → assign to grid.&#x0a;Left-click cell → activate window.&#x0a;Right-click cell → remove.&#x0a;Enter → fullscreen / Esc → exit."
                        Foreground="#888" FontSize="11" TextWrapping="Wrap"
                        Margin="0,6,0,0"/>
             <ListBox x:Name="WindowList"

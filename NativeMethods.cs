@@ -48,6 +48,20 @@ internal static class NativeMethods
     internal const int GWL_EXSTYLE          = -20;
     internal const uint WS_EX_TOOLWINDOW    = 0x00000080;
 
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool IsIconic(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    internal const int SW_RESTORE = 9;
+
     // ── Process identification ───────────────────────────────────
 
     [DllImport("user32.dll")]

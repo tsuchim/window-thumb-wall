@@ -17,8 +17,6 @@ public partial class MainWindow : Window
     private readonly List<ThumbHost> _cellHosts = [];
     private readonly List<ThumbnailSlot> _slots = [];
 
-    private int _maximizedIndex = -1;
-
     private bool _isFullScreen;
     private WindowStyle _savedWindowStyle;
     private WindowState _savedWindowState;
@@ -201,8 +199,6 @@ public partial class MainWindow : Window
 
     private int AddSlot()
     {
-        if (_maximizedIndex >= 0) RestoreGrid();
-
         int idx = _cellBorders.Count;
 
         var label = new TextBlock
@@ -251,8 +247,6 @@ public partial class MainWindow : Window
 
     private void RemoveSlot(int idx)
     {
-        if (_maximizedIndex >= 0) RestoreGrid();
-
         _flashingWindows.Remove(_slots[idx].SourceHwnd);
         _slots[idx].Clear();
         ThumbGrid.Children.Remove(_cellBorders[idx]);
@@ -385,48 +379,17 @@ public partial class MainWindow : Window
             slot.UpdateThumbnail();
     }
 
-    // ── Maximize / Restore ───────────────────────────────────────
+    // ── Activate source window ────────────────────────────────────
 
     private void Cell_LeftClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is not Border { Tag: int idx }) return;
+        if (idx >= _slots.Count || !_slots[idx].IsOccupied) return;
 
-        if (_maximizedIndex == idx)
-            RestoreGrid();
-        else if (_maximizedIndex >= 0)
-            RestoreGrid();
-        else if (idx < _slots.Count && _slots[idx].IsOccupied)
-            MaximizeCell(idx);
-    }
-
-    private void MaximizeCell(int idx)
-    {
-        var (rows, cols) = CalcGridSize(_cellBorders.Count);
-        _maximizedIndex = idx;
-
-        for (int i = 0; i < _cellBorders.Count; i++)
-        {
-            if (i == idx)
-            {
-                Grid.SetRow(_cellBorders[i], 0);
-                Grid.SetColumn(_cellBorders[i], 0);
-                Grid.SetRowSpan(_cellBorders[i], rows);
-                Grid.SetColumnSpan(_cellBorders[i], cols);
-            }
-            else
-            {
-                _cellBorders[i].Visibility = Visibility.Collapsed;
-            }
-        }
-        Dispatcher.BeginInvoke(DispatcherPriority.Render, UpdateAllThumbnails);
-    }
-
-    private void RestoreGrid()
-    {
-        _maximizedIndex = -1;
-        for (int i = 0; i < _cellBorders.Count; i++)
-            _cellBorders[i].Visibility = Visibility.Visible;
-        RebuildGrid();
+        IntPtr hwnd = _slots[idx].SourceHwnd;
+        if (NativeMethods.IsIconic(hwnd))
+            NativeMethods.ShowWindow(hwnd, NativeMethods.SW_RESTORE);
+        NativeMethods.SetForegroundWindow(hwnd);
     }
 
     private void Cell_RightClick(object sender, MouseButtonEventArgs e)
