@@ -21,6 +21,7 @@ jobs:
 
     env:
       VERSION: ''
+      DIST_DIR: dist
 
     steps:
       - name: Checkout
@@ -36,10 +37,13 @@ jobs:
           "VERSION=$ver" | Out-File $env:GITHUB_ENV -Append
           Write-Host "VERSION=$ver"
 
+      - name: Create output directory
+        run: New-Item -ItemType Directory -Force -Path $env:DIST_DIR | Out-Null
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       - name: Restore
         run: dotnet restore WindowThumbWall.csproj
@@ -57,11 +61,13 @@ jobs:
         run: Get-ChildItem publish -Filter *.pdb -Recurse | Remove-Item -Force
 
       - name: Create ZIP
-        run: Compress-Archive -Path "publish\*" -DestinationPath "WindowThumbWall-${{ env.VERSION }}-win-x64.zip" -CompressionLevel Optimal
+        run: Compress-Archive -Path "publish\*" -DestinationPath "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-x64.zip" -CompressionLevel Optimal
 
       # ── MSI artifact (WiX v5) ─────────────────────────────────
       - name: Install WiX
-        run: dotnet tool install --global wix
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix --version
 
       - name: Add WiX UI extension
         run: |
@@ -81,7 +87,7 @@ jobs:
             -arch x64 `
             -ext WixToolset.UI.wixext `
             -d PublishDir="publish-msi" `
-            -o WindowThumbWall-${{ env.VERSION }}-win-x64.msi
+            -o "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-x64.msi"
 
       # ── MSIX artifact ─────────────────────────────────────────
       - name: Publish for MSIX
@@ -104,7 +110,7 @@ jobs:
             Write-Error "makeappx.exe not found. Ensure Windows SDK is installed."
             exit 1
           }
-          & $makeappx pack /d publish-msix /p WindowThumbWall-${{ env.VERSION }}-win-x64.msix /o
+          & $makeappx pack /d publish-msix /p "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-x64.msix" /o
 
       # ── Upload artifacts ───────────────────────────────────────
       # These unsigned artifacts will be signed via SignPath in a future step.
@@ -113,7 +119,7 @@ jobs:
         with:
           name: unsigned-artifacts
           path: |
-            WindowThumbWall-${{ env.VERSION }}-win-x64.zip
-            WindowThumbWall-${{ env.VERSION }}-win-x64.msi
-            WindowThumbWall-${{ env.VERSION }}-win-x64.msix
+            ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-x64.zip
+            ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-x64.msi
+            ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-x64.msix
           if-no-files-found: error

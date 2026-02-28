@@ -40,5 +40,5 @@ This is a single-maintainer project. All roles are held by **@tsuchim**.
 
 ## Privacy
 
-This project **does not collect any personal data**.
-No telemetry, analytics, or network requests are made by the application.
+This project **does not intentionally collect any personal data**.
+Current releases do not include telemetry.

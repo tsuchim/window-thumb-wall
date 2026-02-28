@@ -14,5 +14,8 @@
 4. **Download CI artifacts and create a GitHub Release** — attach the
    CI-built packages as release assets. No locally-built binaries are
    distributed.
-5. *(Planned)* CI artifacts will be submitted to **SignPath Foundation** for
+5. Build tooling versions are pinned for reproducibility:
+   - .NET SDK is pinned via `global.json`
+   - WiX CLI is pinned via `.config/dotnet-tools.json` (and the CI workflow)
+6. *(Planned)* CI artifacts will be submitted to **SignPath Foundation** for
    code signing before being attached to a GitHub Release.
