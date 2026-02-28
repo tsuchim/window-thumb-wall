@@ -51,14 +51,26 @@ selected external windows in a flexible grid layout — no screen capture, no OB
 
 All packages are **self-contained** (no .NET runtime install required).
 
-## Code signing / security note
+## Security / Code Signing
 
-The distributed binaries are **not signed with a public (commercial) code signing certificate**.
+Official release artifacts are built on **GitHub Actions** from version tags
+(`v*`) — only CI-built binaries are distributed.
+The workflow also runs on pull requests and manual dispatch for validation,
+but only tag-triggered builds are used for releases.
 
-- **ZIP / MSI**: typically **unsigned**.
-- **MSIX**: may be **unsigned** or signed with a **self-signed/test certificate**.
+Code signing via [SignPath Foundation](https://signpath.org/) is **planned**.
+Until signing is integrated, binaries are distributed **unsigned** and Windows
+SmartScreen / Defender may show warnings.
 
-Depending on your environment, Windows SmartScreen / Defender may show warnings.
+See [Code Signing Policy](docs/code-signing-policy.md) for details.
+
+## Release Process
+
+1. Create a GPG-signed tag (`git tag -s vX.Y`)
+2. Push the tag — GitHub Actions builds ZIP, MSI, and MSIX artifacts
+3. Download CI artifacts and manually attach them to a GitHub Release
+
+See [docs/releasing.md](docs/releasing.md) for the full process.
 
 ## Building Packages
 
