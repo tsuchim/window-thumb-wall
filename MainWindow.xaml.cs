@@ -525,20 +525,30 @@ public partial class MainWindow : Window
             targetIndex >= 0 && targetIndex < _slots.Count &&
             sourceIndex != targetIndex)
         {
-            SwapSlots(sourceIndex, targetIndex);
+            InsertSlot(sourceIndex, targetIndex);
         }
 
         SetDropPreviewLayer(null);
         e.Handled = true;
     }
 
-    private void SwapSlots(int i, int j)
+    private static void MoveItem<T>(List<T> list, int sourceIndex, int targetIndex)
     {
-        (_cellBorders[i], _cellBorders[j]) = (_cellBorders[j], _cellBorders[i]);
-        (_cellLabels[i], _cellLabels[j]) = (_cellLabels[j], _cellLabels[i]);
-        (_cellHitLayers[i], _cellHitLayers[j]) = (_cellHitLayers[j], _cellHitLayers[i]);
-        (_cellHosts[i], _cellHosts[j]) = (_cellHosts[j], _cellHosts[i]);
-        (_slots[i], _slots[j]) = (_slots[j], _slots[i]);
+        var item = list[sourceIndex];
+        list.RemoveAt(sourceIndex);
+        list.Insert(targetIndex, item);
+    }
+
+    private void InsertSlot(int sourceIndex, int targetIndex)
+    {
+        if (sourceIndex < targetIndex)
+            targetIndex--;
+
+        MoveItem(_cellBorders, sourceIndex, targetIndex);
+        MoveItem(_cellLabels, sourceIndex, targetIndex);
+        MoveItem(_cellHitLayers, sourceIndex, targetIndex);
+        MoveItem(_cellHosts, sourceIndex, targetIndex);
+        MoveItem(_slots, sourceIndex, targetIndex);
 
         for (int idx = 0; idx < _cellBorders.Count; idx++)
         {
