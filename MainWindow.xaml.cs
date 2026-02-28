@@ -34,9 +34,24 @@ public partial class MainWindow : Window
         new(Color.FromRgb(0x55, 0x55, 0x55));
     static MainWindow() => NormalBorderBrush.Freeze();
 
+    private AppState? _pendingRestore;
+
     public MainWindow()
     {
         InitializeComponent();
+
+        // Restore window geometry before the window is shown.
+        _pendingRestore = AppState.Load();
+        if (_pendingRestore.Geometry is { Width: > 0, Height: > 0 } geo)
+        {
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Left = geo.Left;
+            Top = geo.Top;
+            Width = geo.Width;
+            Height = geo.Height;
+            if (geo.IsMaximized)
+                WindowState = WindowState.Maximized;
+        }
 
         _timer.Tick += Timer_Tick;
         Loaded += OnLoaded;
@@ -57,6 +72,7 @@ public partial class MainWindow : Window
         NativeMethods.RegisterShellHookWindow(_mainHwnd);
         HwndSource.FromHwnd(_mainHwnd)?.AddHook(WndProc);
 
+        RestoreSlots();
         _timer.Start();
     }
 
@@ -64,11 +80,96 @@ public partial class MainWindow : Window
     {
         _timer.Stop();
         NativeMethods.DeregisterShellHookWindow(_mainHwnd);
+        SaveState();
         foreach (var slot in _slots) slot.Clear();
     }
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs e) =>
         Dispatcher.BeginInvoke(DispatcherPriority.Render, UpdateAllThumbnails);
+
+    // ── State persistence ─────────────────────────────────────────
+
+    private void SaveState()
+    {
+        var bounds = (WindowState == WindowState.Maximized || _isFullScreen)
+            ? RestoreBounds
+            : new Rect(Left, Top, Width, Height);
+
+        var state = new AppState
+        {
+            IsFullScreen = _isFullScreen,
+            Geometry = new WindowGeometry
+            {
+                Left = bounds.Left,
+                Top = bounds.Top,
+                Width = bounds.Width,
+                Height = bounds.Height,
+                IsMaximized = !_isFullScreen && WindowState == WindowState.Maximized
+            }
+        };
+
+        foreach (var slot in _slots)
+        {
+            if (!slot.IsOccupied) continue;
+            state.Slots.Add(new SlotState
+            {
+                ProcessName = NativeMethods.GetProcessName(slot.SourceHwnd),
+                Title = slot.SourceTitle
+            });
+        }
+
+        state.Save();
+    }
+
+    private void RestoreSlots()
+    {
+        if (_pendingRestore is not { Slots.Count: > 0 } state)
+        {
+            _pendingRestore = null;
+            return;
+        }
+
+        // Enumerate all current windows.
+        var allWindows = new List<(IntPtr Handle, string Title, string ProcessName)>();
+        NativeMethods.EnumWindows((hWnd, _) =>
+        {
+            if (hWnd == _mainHwnd) return true;
+            if (!NativeMethods.IsAltTabWindow(hWnd)) return true;
+            allWindows.Add((hWnd, NativeMethods.GetWindowTitle(hWnd), NativeMethods.GetProcessName(hWnd)));
+            return true;
+        }, IntPtr.Zero);
+
+        var usedHandles = new HashSet<IntPtr>();
+
+        foreach (var saved in state.Slots)
+        {
+            // 1. Exact match: same process + same title.
+            var match = allWindows.FirstOrDefault(w =>
+                !usedHandles.Contains(w.Handle) &&
+                w.ProcessName.Equals(saved.ProcessName, StringComparison.OrdinalIgnoreCase) &&
+                w.Title == saved.Title);
+
+            // 2. Fallback: same process name, any title.
+            if (match.Handle == IntPtr.Zero)
+            {
+                match = allWindows.FirstOrDefault(w =>
+                    !usedHandles.Contains(w.Handle) &&
+                    w.ProcessName.Equals(saved.ProcessName, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (match.Handle == IntPtr.Zero) continue;
+
+            usedHandles.Add(match.Handle);
+            int idx = AddSlot();
+            if (_slots[idx].Assign(match.Handle, match.Title))
+                _cellLabels[idx].Text = match.Title;
+        }
+
+        if (state.IsFullScreen && _slots.Count > 0)
+            ToggleFullScreen();
+
+        _pendingRestore = null;
+    }
 
     // ── Keyboard ─────────────────────────────────────────────────
 

@@ -48,6 +48,25 @@ internal static class NativeMethods
     internal const int GWL_EXSTYLE          = -20;
     internal const uint WS_EX_TOOLWINDOW    = 0x00000080;
 
+    // ── Process identification ───────────────────────────────────
+
+    [DllImport("user32.dll")]
+    internal static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    internal static string GetProcessName(IntPtr hWnd)
+    {
+        GetWindowThreadProcessId(hWnd, out uint pid);
+        if (pid == 0) return string.Empty;
+        try
+        {
+            return System.Diagnostics.Process.GetProcessById((int)pid).ProcessName;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
     // ── Shell hook (flash / activation detection) ────────────────
 
     [DllImport("user32.dll")]
