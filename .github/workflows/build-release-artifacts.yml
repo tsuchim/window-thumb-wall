@@ -141,7 +141,7 @@ jobs:
           path: ${{ env.DIST_DIR }}
 
       - name: Create draft GitHub Release and upload assets
-        uses: softprops/action-gh-release@5e8f49a4f01c6fae135c8db05d4953ea0551f9f4
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b
         with:
           draft: true
           files: ${{ env.DIST_DIR }}/*
