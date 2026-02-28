@@ -10,12 +10,18 @@ namespace WindowThumbWall;
 
 public partial class MainWindow : Window
 {
+    private const string SlotDragFormat = "WindowThumbWall.SlotIndex";
+
     private IntPtr _mainHwnd;
 
     private readonly List<Border> _cellBorders = [];
     private readonly List<TextBlock> _cellLabels = [];
+    private readonly List<Border> _cellTitleBars = [];
     private readonly List<ThumbHost> _cellHosts = [];
     private readonly List<ThumbnailSlot> _slots = [];
+
+    private Point _dragStartPoint;
+    private int _dragSourceIndex = -1;
 
     private bool _isFullScreen;
     private WindowStyle _savedWindowStyle;
@@ -205,17 +211,30 @@ public partial class MainWindow : Window
         {
             Text = "(empty)",
             Foreground = Brushes.LightGray,
-            Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)),
             Padding = new Thickness(6, 3, 6, 3),
             FontSize = 12,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
-        DockPanel.SetDock(label, Dock.Top);
+
+        var titleBar = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)),
+            Child = label,
+            Cursor = Cursors.SizeAll,
+            Tag = idx,
+            AllowDrop = true
+        };
+        titleBar.PreviewMouseLeftButtonDown += TitleBar_PreviewMouseLeftButtonDown;
+        titleBar.PreviewMouseMove += TitleBar_PreviewMouseMove;
+        titleBar.PreviewMouseLeftButtonUp += TitleBar_PreviewMouseLeftButtonUp;
+        titleBar.DragOver += TitleBar_DragOver;
+        titleBar.Drop += TitleBar_Drop;
+        DockPanel.SetDock(titleBar, Dock.Top);
 
         var host = new ThumbHost();
 
         var panel = new DockPanel();
-        panel.Children.Add(label);
+        panel.Children.Add(titleBar);
         panel.Children.Add(host);
 
         var border = new Border
@@ -234,6 +253,7 @@ public partial class MainWindow : Window
         ThumbGrid.Children.Add(border);
         _cellBorders.Add(border);
         _cellLabels.Add(label);
+        _cellTitleBars.Add(titleBar);
         _cellHosts.Add(host);
 
         RebuildGrid();
@@ -254,11 +274,15 @@ public partial class MainWindow : Window
 
         _cellBorders.RemoveAt(idx);
         _cellLabels.RemoveAt(idx);
+        _cellTitleBars.RemoveAt(idx);
         _cellHosts.RemoveAt(idx);
         _slots.RemoveAt(idx);
 
         for (int i = 0; i < _cellBorders.Count; i++)
+        {
             _cellBorders[i].Tag = i;
+            _cellTitleBars[i].Tag = i;
+        }
 
         RebuildGrid();
     }
@@ -395,8 +419,104 @@ public partial class MainWindow : Window
     private void Cell_RightClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is not Border { Tag: int idx }) return;
-        if (idx < _slots.Count)
-            RemoveSlot(idx);
+
+        var menu = new ContextMenu();
+
+        var clearItem = new MenuItem
+        {
+            Header = "選択解除",
+            IsEnabled = idx < _slots.Count
+        };
+        clearItem.Click += (_, _) =>
+        {
+            if (idx < _slots.Count)
+                RemoveSlot(idx);
+        };
+
+        var exitFullScreenItem = new MenuItem
+        {
+            Header = "全画面解除",
+            IsEnabled = _isFullScreen
+        };
+        exitFullScreenItem.Click += (_, _) =>
+        {
+            if (_isFullScreen)
+                ToggleFullScreen();
+        };
+
+        menu.Items.Add(clearItem);
+        menu.Items.Add(exitFullScreenItem);
+        menu.PlacementTarget = (FrameworkElement)sender;
+        menu.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private void TitleBar_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Border { Tag: int idx }) return;
+        _dragSourceIndex = idx;
+        _dragStartPoint = e.GetPosition(this);
+        ((UIElement)sender).CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void TitleBar_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_dragSourceIndex < 0 || sender is not UIElement element) return;
+        if (e.LeftButton != MouseButtonState.Pressed) return;
+
+        Point current = e.GetPosition(this);
+        Vector delta = current - _dragStartPoint;
+        if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance)
+            return;
+
+        var sourceIndex = _dragSourceIndex;
+        _dragSourceIndex = -1;
+        element.ReleaseMouseCapture();
+        DragDrop.DoDragDrop(element, new DataObject(SlotDragFormat, sourceIndex), DragDropEffects.Move);
+    }
+
+    private void TitleBar_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        _dragSourceIndex = -1;
+        ((UIElement)sender).ReleaseMouseCapture();
+    }
+
+    private static void TitleBar_DragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(SlotDragFormat) ? DragDropEffects.Move : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void TitleBar_Drop(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(SlotDragFormat)) return;
+        if (sender is not Border { Tag: int targetIndex }) return;
+
+        int sourceIndex = (int)e.Data.GetData(SlotDragFormat)!;
+        if (sourceIndex < 0 || sourceIndex >= _slots.Count) return;
+        if (targetIndex < 0 || targetIndex >= _slots.Count) return;
+        if (sourceIndex == targetIndex) return;
+
+        SwapSlots(sourceIndex, targetIndex);
+    }
+
+    private void SwapSlots(int i, int j)
+    {
+        (_cellBorders[i], _cellBorders[j]) = (_cellBorders[j], _cellBorders[i]);
+        (_cellLabels[i], _cellLabels[j]) = (_cellLabels[j], _cellLabels[i]);
+        (_cellTitleBars[i], _cellTitleBars[j]) = (_cellTitleBars[j], _cellTitleBars[i]);
+        (_cellHosts[i], _cellHosts[j]) = (_cellHosts[j], _cellHosts[i]);
+        (_slots[i], _slots[j]) = (_slots[j], _slots[i]);
+
+        for (int idx = 0; idx < _cellBorders.Count; idx++)
+        {
+            _cellBorders[idx].Tag = idx;
+            _cellTitleBars[idx].Tag = idx;
+        }
+
+        RebuildGrid();
     }
 
     // ── Flash detection (shell hook) ─────────────────────────────
