@@ -107,7 +107,7 @@ jobs:
           if (-not $makeappx) {
             throw "makeappx.exe not found. Ensure Windows SDK is installed."
           }
-          $msix = "WindowThumbWall-${{ steps.versioning.outputs.VERSION }}-win-x64.msix"
+          $msix = Join-Path "publish-msix" "WindowThumbWall-${{ steps.versioning.outputs.VERSION }}-win-x64.msix"
           & $makeappx pack /d "publish-msix" /p $msix /o
           Write-Host "MSIX created: $msix"
 
@@ -128,7 +128,8 @@ jobs:
         run: |
           # Plan A only applies to already-live free Store products.
           # The first run stays as a draft submission for safety.
-          msstore publish "$PWD" --inputDirectory "$PWD" --appId "$env:STORE_PRODUCT_ID" --noCommit
+          $projectRoot = Join-Path $PWD "publish-msix"
+          msstore publish $projectRoot --inputDirectory $projectRoot --appId "$env:STORE_PRODUCT_ID" --noCommit
 
       - name: MSStore Status
         shell: pwsh
