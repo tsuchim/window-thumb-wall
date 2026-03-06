@@ -63,11 +63,36 @@ jobs:
         run: |
           $manifestPath = "packaging\AppxManifest.xml"
           $targetPath = "publish-msix\AppxManifest.xml"
-          $content = Get-Content $manifestPath -Raw
           $newVersion = "${{ steps.versioning.outputs.VERSION }}"
-          # Patch version in AppxManifest.xml
-          $content = $content -replace 'Version="[0-9.]+?"', "Version=`"$newVersion`""
-          $content | Set-Content $targetPath -Force
+
+          $xml = New-Object System.Xml.XmlDocument
+          $xml.PreserveWhitespace = $true
+          $xml.Load($manifestPath)
+
+          $namespaceUri = $xml.DocumentElement.NamespaceURI
+          $namespaceManager = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+          $namespaceManager.AddNamespace("appx", $namespaceUri)
+
+          $identityNode = $xml.SelectSingleNode("/appx:Package/appx:Identity", $namespaceManager)
+          if (-not $identityNode) {
+            throw "Identity element not found in $manifestPath"
+          }
+
+          $identityNode.SetAttribute("Version", $newVersion)
+
+          $settings = New-Object System.Xml.XmlWriterSettings
+          $settings.Encoding = New-Object System.Text.UTF8Encoding($false)
+          $settings.Indent = $true
+          $settings.NewLineChars = "`n"
+          $settings.NewLineHandling = [System.Xml.NewLineHandling]::Replace
+
+          $writer = [System.Xml.XmlWriter]::Create($targetPath, $settings)
+          try {
+            $xml.Save($writer)
+          } finally {
+            $writer.Dispose()
+          }
+
           Write-Host "Patched version to $newVersion in $targetPath"
 
       - name: Prepare Assets
