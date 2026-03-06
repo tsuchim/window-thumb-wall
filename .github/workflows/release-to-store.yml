@@ -17,9 +17,15 @@ jobs:
       - name: Check prerequisites
         shell: pwsh
         run: |
-          if (-not $env:STORE_PRODUCT_ID) {
+          $val = $env:STORE_PRODUCT_ID
+          if (-not $val) {
             Write-Error "MSSTORE_PRODUCT_ID variable is missing from the repository variables."
             exit 1
+          }
+          $normalized = $val.ToUpperInvariant()
+          if ($val -ne $normalized) {
+            Write-Host "Normalizing STORE_PRODUCT_ID to uppercase: $normalized"
+            "STORE_PRODUCT_ID=$normalized" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           }
 
       - name: Checkout
