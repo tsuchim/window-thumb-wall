@@ -148,7 +148,6 @@ jobs:
         run: |
           # Plan A only applies to already-live free Store products.
           # The first run stays as a draft submission for safety.
-          $projectRoot = $PWD
           $msix = Get-ChildItem (Join-Path $PWD "publish-msix") -Filter *.msix |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
@@ -157,26 +156,14 @@ jobs:
             throw "No .msix file found under publish-msix."
           }
 
-          $inputDir = $msix.Directory.FullName
-
-          if (-not (Test-Path $projectRoot)) {
-            throw "Project root does not exist: $projectRoot"
-          }
-
-          if (-not (Test-Path $inputDir)) {
-            throw "Input directory does not exist: $inputDir"
-          }
-
           if (-not (Test-Path $msix.FullName)) {
             throw "MSIX file does not exist: $($msix.FullName)"
           }
 
-          Write-Host "Project root: $projectRoot"
           Write-Host "MSIX file: $($msix.FullName)"
-          Write-Host "Input directory: $inputDir"
-          Get-ChildItem $inputDir | Format-Table Name,Length,LastWriteTime -Auto
+          Get-Item $msix.FullName | Format-Table Name,Length,LastWriteTime -Auto
 
-          msstore publish $projectRoot -i $inputDir -id "$env:STORE_PRODUCT_ID" -nc -v
+          msstore publish "$($msix.FullName)" -id "$env:STORE_PRODUCT_ID" -nc -v
 
       - name: MSStore Status
         shell: pwsh
