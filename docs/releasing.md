@@ -38,6 +38,8 @@ Three-component tags are normalized to four-part package versions for MSIX submi
 2. **GitHub Variable**:
    - `MSSTORE_PRODUCT_ID`: The Store ID (Product ID) of the app.
 
+**Caution**: The Azure AD app registration must be authorized in Partner Center for the seller account; otherwise Dev Center API calls will fail with `Unauthorized` even if token acquisition succeeds.
+
 ### Workflow Trigger
 Pushing a tag like `v0.4.2` or `v0.4.2.1` (validated against `^v\d+\.\d+\.\d+(\.\d+)?$`) will:
 1. Build the MSIX package.

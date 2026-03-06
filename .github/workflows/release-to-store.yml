@@ -135,85 +135,6 @@ jobs:
         with:
           version: v0.3.9
 
-      - name: MSStore Reconfigure
-        shell: pwsh
-        run: |
-          msstore reconfigure `
-            --tenantId "${{ secrets.AZURE_AD_TENANT_ID }}" `
-            --sellerId "${{ secrets.SELLER_ID }}" `
-            --clientId "${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}" `
-            --clientSecret "${{ secrets.AZURE_AD_APPLICATION_SECRET }}"
-
-      - name: Store CLI Diagnostics
-        shell: pwsh
-        run: |
-          msstore --version
-          msstore publish --help
-
-      - name: Direct DevCenter API Diagnostics
-        shell: pwsh
-        continue-on-error: true
-        run: |
-          $tenantId = "${{ secrets.AZURE_AD_TENANT_ID }}"
-          $clientId = "${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}"
-          $clientSecret = "${{ secrets.AZURE_AD_APPLICATION_SECRET }}"
-          $productId = "${{ steps.prereq.outputs.store_product_id }}"
-
-          $tokenUrl = "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/token"
-          $tokenBody = @{
-              client_id     = $clientId
-              client_secret = $clientSecret
-              scope         = "https://manage.devcenter.microsoft.com/.default"
-              grant_type    = "client_credentials"
-          }
-
-          Write-Host "Acquiring access token..."
-          $tokenResponse = Invoke-WebRequest -Uri $tokenUrl -Method Post -Body $tokenBody -SkipHttpErrorCheck
-          if ($tokenResponse.StatusCode -ne 200) {
-              Write-Host "Token acquisition failed (HTTP $($tokenResponse.StatusCode))"
-              $tokenResponse.Content | Out-String | Write-Host
-              return
-          }
-          $token = ($tokenResponse.Content | ConvertFrom-Json).access_token
-          Write-Host "Token acquisition success."
-
-          $headers = @{
-              Authorization = "Bearer $token"
-              TenantId      = $tenantId
-          }
-
-          # 1) List applications
-          Write-Host "`n--- List Applications ---"
-          $listUrl = "https://manage.devcenter.microsoft.com/v1.0/my/applications?top=20&skip=0"
-          $listResponse = Invoke-WebRequest -Uri $listUrl -Method Get -Headers $headers -SkipHttpErrorCheck
-          Write-Host "List Applications status: $($listResponse.StatusCode)"
-          
-          if ($listResponse.StatusCode -eq 200) {
-              $listData = $listResponse.Content | ConvertFrom-Json
-              if ($listData.value) {
-                  $listData.value | Select-Object id, primaryName, packageFamilyName | Format-Table -AutoSize | Out-String | Write-Host
-              } else {
-                  Write-Host "No 'value' array in JSON response."
-              }
-          } else {
-              $listResponse.Content | Out-String | Write-Host
-          }
-
-          # 2) Get specific application
-          Write-Host "`n--- Get Application ($productId) ---"
-          $getUrl = "https://manage.devcenter.microsoft.com/v1.0/my/applications/$productId"
-          $getResponse = Invoke-WebRequest -Uri $getUrl -Method Get -Headers $headers -SkipHttpErrorCheck
-          Write-Host "Get Application status: $($getResponse.StatusCode)"
-
-          if ($getResponse.StatusCode -eq 200) {
-              $getData = $getResponse.Content | ConvertFrom-Json
-              $getData | Select-Object id, primaryName, packageFamilyName | Format-List | Out-String | Write-Host
-          } else {
-              $content = $getResponse.Content | Out-String
-              if ($content.Length -gt 1000) { $content = $content.Substring(0, 1000) + "..." }
-              Write-Host $content
-          }
-
       - name: MSStore Publish
         shell: pwsh
         run: |
@@ -233,6 +154,12 @@ jobs:
 
           Write-Host "MSIX file: $($msix.FullName)"
           Get-Item $msix.FullName | Format-Table Name,Length,LastWriteTime -Auto
+
+          msstore reconfigure `
+            --tenantId "${{ secrets.AZURE_AD_TENANT_ID }}" `
+            --sellerId "${{ secrets.SELLER_ID }}" `
+            --clientId "${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}" `
+            --clientSecret "${{ secrets.AZURE_AD_APPLICATION_SECRET }}"
 
           msstore publish "$($msix.FullName)" -id "${{ steps.prereq.outputs.store_product_id }}" -nc -v
 
