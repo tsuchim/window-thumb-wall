@@ -126,10 +126,9 @@ jobs:
       - name: MSStore Publish
         shell: pwsh
         run: |
-          $msix = "WindowThumbWall-${{ steps.versioning.outputs.VERSION }}-win-x64.msix"
           # Plan A only applies to already-live free Store products.
           # The first run stays as a draft submission for safety.
-          msstore publish "$PWD" --inputFile $msix --appId "$env:STORE_PRODUCT_ID" --noCommit
+          msstore publish "$PWD" --inputDirectory "$PWD" --appId "$env:STORE_PRODUCT_ID" --noCommit
 
       - name: MSStore Status
         shell: pwsh
