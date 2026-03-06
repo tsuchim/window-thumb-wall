@@ -64,6 +64,8 @@ SmartScreen / Defender may show warnings.
 
 See [Code Signing Policy](docs/code-signing-policy.md) for details.
 
+For privacy and local data handling, see [PRIVACY.md](PRIVACY.md).
+
 ## Release Process
 
 1. Create a GPG-signed tag (`git tag -s vX.Y`)

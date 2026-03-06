@@ -23,3 +23,6 @@ publish-*/
 *.zip
 *.wixpdb
 cab*.cab
+
+# Handoff artifacts & logs
+docs/handoff/*-logs/
