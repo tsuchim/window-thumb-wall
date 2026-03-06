@@ -1,0 +1,112 @@
+# Publish to Microsoft Store via GitHub Actions
+
+name: Release to Microsoft Store
+
+on:
+  push:
+    tags:
+      - 'v*' # GitHub Actions filters use glob patterns
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    env:
+      STORE_PRODUCT_ID: ${{ vars.MSSTORE_PRODUCT_ID }}
+    
+    steps:
+      - name: Check prerequisites
+        shell: pwsh
+        run: |
+          if (-not $env:STORE_PRODUCT_ID) {
+            Write-Error "MSSTORE_PRODUCT_ID variable is missing from the repository variables."
+            exit 1
+          }
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract and validate version from tag
+        id: versioning
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF -replace 'refs/tags/', ''
+          if ($tag -notmatch '^v\d+\.\d+\.\d+(\.\d+)?$') {
+            Write-Error "Tag $tag does not match format vX.Y.Z or vX.Y.Z.W"
+            exit 1
+          }
+          $parts = $tag.Substring(1).Split('.')
+          if ($parts.Length -eq 3) {
+            $version = "$($parts[0]).$($parts[1]).$($parts[2]).0"
+          } else {
+            $version = $parts -join '.'
+          }
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Publishing version: $version"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore WindowThumbWall.csproj
+
+      - name: Publish (Store version)
+        run: |
+          dotnet publish WindowThumbWall.csproj `
+            -c Release -r win-x64 --self-contained `
+            -p:PublishSingleFile=false `
+            -o publish-msix
+
+      - name: Patch AppxManifest version
+        shell: pwsh
+        run: |
+          $manifestPath = "packaging\AppxManifest.xml"
+          $targetPath = "publish-msix\AppxManifest.xml"
+          $content = Get-Content $manifestPath -Raw
+          $newVersion = "${{ steps.versioning.outputs.VERSION }}"
+          # Patch version in AppxManifest.xml
+          $content = $content -replace 'Version="[0-9.]+?"', "Version=`"$newVersion`""
+          $content | Set-Content $targetPath -Force
+          Write-Host "Patched version to $newVersion in $targetPath"
+
+      - name: Prepare Assets
+        run: |
+          Copy-Item packaging\Assets publish-msix\Assets -Recurse -Force
+
+      - name: Create MSIX
+        shell: pwsh
+        run: |
+          $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" -ErrorAction SilentlyContinue |
+                      Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $makeappx) {
+            throw "makeappx.exe not found. Ensure Windows SDK is installed."
+          }
+          $msix = "WindowThumbWall-${{ steps.versioning.outputs.VERSION }}-win-x64.msix"
+          & $makeappx pack /d "publish-msix" /p $msix /o
+          Write-Host "MSIX created: $msix"
+
+      - name: Setup Store CLI
+        uses: microsoft/microsoft-store-apppublisher@v1.2
+
+      - name: MSStore Reconfigure
+        shell: pwsh
+        run: |
+          msstore reconfigure `
+            --tenantId "${{ secrets.AZURE_AD_TENANT_ID }}" `
+            --sellerId "${{ secrets.SELLER_ID }}" `
+            --clientId "${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}" `
+            --clientSecret "${{ secrets.AZURE_AD_APPLICATION_SECRET }}"
+
+      - name: MSStore Publish
+        shell: pwsh
+        run: |
+          $msix = "WindowThumbWall-${{ steps.versioning.outputs.VERSION }}-win-x64.msix"
+          # Plan A only applies to already-live free Store products.
+          # The first run stays as a draft submission for safety.
+          msstore publish "$PWD" --inputFile $msix --appId "$env:STORE_PRODUCT_ID" --noCommit
+
+      - name: MSStore Status
+        shell: pwsh
+        run: |
+          msstore submission status "$env:STORE_PRODUCT_ID"
