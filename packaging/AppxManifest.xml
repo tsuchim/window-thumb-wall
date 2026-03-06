@@ -5,7 +5,7 @@
          IgnorableNamespaces="uap rescap">
 
   <Identity Name="tsuchim.WindowThumbWall"
-            Publisher="CN=tsuchim"
+            Publisher="CN=F6D2388F-2B1D-4A95-BC62-2D5CDADC605B"
             Version="0.2.0.0"
             ProcessorArchitecture="x64" />
 

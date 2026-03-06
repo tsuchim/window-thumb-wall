@@ -64,6 +64,9 @@ jobs:
           $manifestPath = "packaging\AppxManifest.xml"
           $targetPath = "publish-msix\AppxManifest.xml"
           $newVersion = "${{ steps.versioning.outputs.VERSION }}"
+          $identityName = "tsuchim.WindowThumbWall"
+          $identityPublisher = "CN=F6D2388F-2B1D-4A95-BC62-2D5CDADC605B"
+          $publisherDisplayName = "tsuchim"
 
           $xml = New-Object System.Xml.XmlDocument
           $xml.PreserveWhitespace = $true
@@ -78,7 +81,16 @@ jobs:
             throw "Identity element not found in $manifestPath"
           }
 
+          $identityNode.SetAttribute("Name", $identityName)
+          $identityNode.SetAttribute("Publisher", $identityPublisher)
           $identityNode.SetAttribute("Version", $newVersion)
+
+          $publisherDisplayNameNode = $xml.SelectSingleNode("/appx:Package/appx:Properties/appx:PublisherDisplayName", $namespaceManager)
+          if (-not $publisherDisplayNameNode) {
+            throw "PublisherDisplayName element not found in $manifestPath"
+          }
+
+          $publisherDisplayNameNode.InnerText = $publisherDisplayName
 
           $settings = New-Object System.Xml.XmlWriterSettings
           $settings.Encoding = New-Object System.Text.UTF8Encoding($false)
@@ -128,8 +140,9 @@ jobs:
         run: |
           # Plan A only applies to already-live free Store products.
           # The first run stays as a draft submission for safety.
-          $projectRoot = Join-Path $PWD "publish-msix"
-          msstore publish $projectRoot --inputDirectory $projectRoot --appId "$env:STORE_PRODUCT_ID" --noCommit
+          $projectRoot = $PWD
+          $packagePath = Join-Path $PWD "publish-msix\WindowThumbWall-${{ steps.versioning.outputs.VERSION }}-win-x64.msix"
+          msstore publish $projectRoot -i $packagePath -id "$env:STORE_PRODUCT_ID" -nc -v
 
       - name: MSStore Status
         shell: pwsh
