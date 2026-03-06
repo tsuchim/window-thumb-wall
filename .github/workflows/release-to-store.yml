@@ -15,6 +15,7 @@ jobs:
     
     steps:
       - name: Check prerequisites
+        id: prereq
         shell: pwsh
         run: |
           $val = $env:STORE_PRODUCT_ID
@@ -25,8 +26,8 @@ jobs:
           $normalized = $val.ToUpperInvariant()
           if ($val -ne $normalized) {
             Write-Host "Normalizing STORE_PRODUCT_ID to uppercase: $normalized"
-            "STORE_PRODUCT_ID=$normalized" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           }
+          "store_product_id=$normalized" >> $env:GITHUB_OUTPUT
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -169,9 +170,9 @@ jobs:
           Write-Host "MSIX file: $($msix.FullName)"
           Get-Item $msix.FullName | Format-Table Name,Length,LastWriteTime -Auto
 
-          msstore publish "$($msix.FullName)" -id "$env:STORE_PRODUCT_ID" -nc -v
+          msstore publish "$($msix.FullName)" -id "${{ steps.prereq.outputs.store_product_id }}" -nc -v
 
       - name: MSStore Status
         shell: pwsh
         run: |
-          msstore submission status "$env:STORE_PRODUCT_ID"
+          msstore submission status "${{ steps.prereq.outputs.store_product_id }}"
