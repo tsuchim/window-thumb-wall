@@ -10,7 +10,7 @@
             ProcessorArchitecture="x64" />
 
   <Properties>
-    <DisplayName>WindowThumbWall</DisplayName>
+    <DisplayName>Window Thumb Wall</DisplayName>
     <PublisherDisplayName>tsuchim</PublisherDisplayName>
     <Description>Live DWM thumbnail wall for external windows</Description>
     <Logo>Assets\StoreLogo.png</Logo>
@@ -28,7 +28,7 @@
     <Application Id="App"
                  Executable="WindowThumbWall.exe"
                  EntryPoint="Windows.FullTrustApplication">
-      <uap:VisualElements DisplayName="WindowThumbWall"
+      <uap:VisualElements DisplayName="Window Thumb Wall"
                           Description="Live DWM thumbnail wall"
                           BackgroundColor="#1E1E1E"
                           Square150x150Logo="Assets\Square150x150Logo.png"
