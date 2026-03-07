@@ -181,7 +181,7 @@ jobs:
             --clientId "${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}" `
             --clientSecret "${{ secrets.AZURE_AD_APPLICATION_SECRET }}"
 
-          msstore publish "$($package.FullName)" -id "${{ steps.prereq.outputs.store_product_id }}" -nc -v
+          msstore publish "$($package.FullName)" -id "${{ steps.prereq.outputs.store_product_id }}" -v
 
       - name: MSStore Status
         shell: pwsh
