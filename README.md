@@ -49,7 +49,7 @@ selected external windows in a flexible grid layout.
 | Format | File | Notes |
 |--------|------|-------|
 | **ZIP** | `WindowThumbWall-v0.2-win-x64.zip` | Portable |
-| **MSI** | `WindowThumbWall-v0.2-win-x64.msi` | Installer (uninstall removes local app state) |
+| **MSI** | `WindowThumbWall-v0.2-win-x64.msi` | Installer (uninstall removes local app state for the uninstalling user) |
 | **MSIX** | `WindowThumbWall-v0.2-win-x64.msix` | Package (uninstall removes packaged app data) |
 
 ## Privacy Summary
@@ -57,7 +57,7 @@ selected external windows in a flexible grid layout.
 - WindowThumbWall does not collect or transmit personal information.
 - For display/restore, it stores only user-designated window entries and app names in local app data.
 - Thumbnails/screenshot-like window images are captured only for on-screen display and are not used for any other purpose.
-- Uninstall removes stored app data for MSI and MSIX packages (ZIP is portable and requires manual cleanup).
+- Uninstall removes stored app data for MSIX packages, and for MSI packages it removes local app state for the uninstalling user (ZIP is portable and requires manual cleanup).
 
 ## Security / Code Signing
 

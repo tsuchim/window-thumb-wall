@@ -5,7 +5,7 @@ public static class LocalizedText
     private static readonly IReadOnlyDictionary<string, string> En = new Dictionary<string, string>
     {
         ["app.title"] = "WindowThumbWall",
-        ["label.filter"] = "Select apps to monitor:",
+        ["label.filter"] = "Filter windows:",
         ["label.autoApps"] = "Auto-add apps",
         ["button.fullscreen"] = "Fullscreen (Enter)",
         ["button.shortcuts"] = "Shortcut Keys: Enter / Esc",
@@ -47,7 +47,7 @@ public static class LocalizedText
     private static readonly IReadOnlyDictionary<string, string> Ja = new Dictionary<string, string>
     {
         ["app.title"] = "WindowThumbWall",
-        ["label.filter"] = "モニタするアプリを選択",
+        ["label.filter"] = "ウィンドウをフィルタ",
         ["label.autoApps"] = "自動追加アプリ",
         ["button.fullscreen"] = "全画面表示 (Enter)",
         ["button.shortcuts"] = "ショートカットキー: Enter / Esc",

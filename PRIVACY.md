@@ -24,7 +24,7 @@ To remove the stored state, close WindowThumbWall and delete the file above. The
 
 Uninstall behavior by package type:
 
-- MSI: uninstall removes this local data folder for the current user.
+- MSI: uninstall removes this local data folder for the user who runs the uninstall.
 - MSIX (Store package): uninstall removes the packaged app data container.
 - ZIP (portable): no uninstaller, so remove the file/folder manually if needed.
 
