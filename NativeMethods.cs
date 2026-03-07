@@ -74,7 +74,8 @@ internal static class NativeMethods
         if (pid == 0) return string.Empty;
         try
         {
-            return Process.GetProcessById((int)pid).ProcessName;
+            using var process = Process.GetProcessById((int)pid);
+            return process.ProcessName;
         }
         catch
         {

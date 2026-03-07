@@ -13,6 +13,7 @@ internal sealed class ThumbnailSlot
 
     internal IntPtr SourceHwnd { get; private set; }
     internal string SourceTitle { get; private set; } = string.Empty;
+    internal string SourceProcessName { get; private set; } = string.Empty;
     internal bool IsOccupied => SourceHwnd != IntPtr.Zero;
 
     internal ThumbnailSlot(ThumbHost host, IntPtr ownerHwnd)
@@ -21,7 +22,7 @@ internal sealed class ThumbnailSlot
         _ownerHwnd = ownerHwnd;
     }
 
-    internal bool Assign(IntPtr sourceHwnd, string title)
+    internal bool Assign(IntPtr sourceHwnd, string title, string processName)
     {
         Clear();
         if (_host.Hwnd == IntPtr.Zero) return false;
@@ -32,6 +33,7 @@ internal sealed class ThumbnailSlot
         _thumbId = id;
         SourceHwnd = sourceHwnd;
         SourceTitle = title;
+        SourceProcessName = processName;
         UpdateThumbnail();
         return true;
     }
@@ -45,6 +47,7 @@ internal sealed class ThumbnailSlot
         }
         SourceHwnd = IntPtr.Zero;
         SourceTitle = string.Empty;
+        SourceProcessName = string.Empty;
     }
 
     /// <summary>

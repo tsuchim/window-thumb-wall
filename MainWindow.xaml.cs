@@ -140,7 +140,7 @@ public partial class MainWindow : Window
             if (!slot.IsOccupied) continue;
             state.Slots.Add(new SlotState
             {
-                ProcessName = NativeMethods.GetProcessName(slot.SourceHwnd),
+                ProcessName = slot.SourceProcessName,
                 Title = slot.SourceTitle
             });
         }
@@ -217,7 +217,7 @@ public partial class MainWindow : Window
 
             usedHandles.Add(match.Handle);
             int idx = AddSlot();
-            if (_slots[idx].Assign(match.Handle, match.Title))
+            if (_slots[idx].Assign(match.Handle, match.Title, match.ProcessName))
                 _cellLabels[idx].Text = match.Title;
         }
 
@@ -441,15 +441,34 @@ public partial class MainWindow : Window
         if (insertIndex is int targetIndex)
         {
             targetIndex = Math.Clamp(targetIndex, 0, _slots.Count);
-            int sourceIndex = AddSlot();
-            if (!_slots[sourceIndex].Assign(info.Handle, info.Title))
+
+            int sourceIndex = -1;
+            for (int i = 0; i < _slots.Count; i++)
             {
-                RemoveSlot(sourceIndex);
+                if (!_slots[i].IsOccupied)
+                {
+                    sourceIndex = i;
+                    break;
+                }
+            }
+
+            bool createdNew = false;
+            if (sourceIndex == -1)
+            {
+                sourceIndex = AddSlot();
+                createdNew = true;
+            }
+
+            if (!_slots[sourceIndex].Assign(info.Handle, info.Title, info.ProcessName))
+            {
+                if (createdNew)
+                    RemoveSlot(sourceIndex);
                 return;
             }
 
             _cellLabels[sourceIndex].Text = info.Title;
-            InsertSlot(sourceIndex, targetIndex);
+            if (sourceIndex != targetIndex)
+                InsertSlot(sourceIndex, targetIndex);
             return;
         }
 
@@ -468,7 +487,7 @@ public partial class MainWindow : Window
         if (target == -1)
             target = AddSlot();
 
-        if (_slots[target].Assign(info.Handle, info.Title))
+        if (_slots[target].Assign(info.Handle, info.Title, info.ProcessName))
             _cellLabels[target].Text = info.Title;
     }
 
@@ -547,13 +566,7 @@ public partial class MainWindow : Window
                     .FirstOrDefault(x => x.app.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase))
                     ?.idx ?? -1;
                 if (existingIndex >= 0 && _autoAddApps[existingIndex].DisplayName != displayName)
-                {
-                    _autoAddApps[existingIndex] = new AutoAddAppEntry
-                    {
-                        ProcessName = _autoAddApps[existingIndex].ProcessName,
-                        DisplayName = displayName
-                    };
-                }
+                    _autoAddApps[existingIndex].DisplayName = displayName;
             }
             return;
         }
@@ -672,11 +685,22 @@ public partial class MainWindow : Window
         for (int i = 0; i <= appIndex; i++)
             precedenceApps.Add(_autoAddApps[i].ProcessName);
 
+        var hwndToProcess = _windowCache
+            .GroupBy(window => window.Handle)
+            .ToDictionary(group => group.Key, group => group.First().ProcessName);
+
         int lastIndex = -1;
         for (int i = 0; i < _slots.Count; i++)
         {
             if (!_slots[i].IsOccupied) continue;
-            string slotProcess = NativeMethods.GetProcessName(_slots[i].SourceHwnd);
+
+            string slotProcess = _slots[i].SourceProcessName;
+            if (string.IsNullOrWhiteSpace(slotProcess) &&
+                !hwndToProcess.TryGetValue(_slots[i].SourceHwnd, out slotProcess))
+            {
+                continue;
+            }
+
             if (precedenceApps.Contains(slotProcess))
                 lastIndex = i;
         }
@@ -696,11 +720,7 @@ public partial class MainWindow : Window
             string displayName = ResolveDisplayNameFromWindow(matchingWindow.Handle, entry.ProcessName);
             if (displayName == entry.DisplayName) continue;
 
-            _autoAddApps[i] = new AutoAddAppEntry
-            {
-                ProcessName = entry.ProcessName,
-                DisplayName = displayName
-            };
+            entry.DisplayName = displayName;
         }
     }
 
