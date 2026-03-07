@@ -9,7 +9,7 @@ on:
 
 jobs:
   publish:
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     env:
       STORE_PRODUCT_ID: ${{ vars.MSSTORE_PRODUCT_ID }}
     
@@ -64,7 +64,7 @@ jobs:
             throw "vswhere.exe not found at $vswhere"
           }
 
-          $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' |
+          $msbuild = & $vswhere -latest -prerelease -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' |
             Select-Object -First 1
 
           if (-not $msbuild) {
