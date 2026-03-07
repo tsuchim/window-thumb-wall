@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 
 namespace WindowThumbWall;
 
@@ -73,7 +74,33 @@ internal static class NativeMethods
         if (pid == 0) return string.Empty;
         try
         {
-            return System.Diagnostics.Process.GetProcessById((int)pid).ProcessName;
+            return Process.GetProcessById((int)pid).ProcessName;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    internal static string GetAppDisplayName(IntPtr hWnd)
+    {
+        GetWindowThreadProcessId(hWnd, out uint pid);
+        if (pid == 0) return string.Empty;
+
+        try
+        {
+            using var process = Process.GetProcessById((int)pid);
+            string? fileName = process.MainModule?.FileName;
+            if (!string.IsNullOrWhiteSpace(fileName))
+            {
+                FileVersionInfo info = FileVersionInfo.GetVersionInfo(fileName);
+                if (!string.IsNullOrWhiteSpace(info.ProductName))
+                    return info.ProductName;
+                if (!string.IsNullOrWhiteSpace(info.FileDescription))
+                    return info.FileDescription;
+            }
+
+            return process.ProcessName;
         }
         catch
         {

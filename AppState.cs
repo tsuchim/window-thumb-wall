@@ -6,8 +6,11 @@ namespace WindowThumbWall;
 internal sealed class AppState
 {
     public List<SlotState> Slots { get; set; } = [];
+    public List<string> AutoAddApps { get; set; } = [];
     public WindowGeometry? Geometry { get; set; }
     public bool IsFullScreen { get; set; }
+    public double LeftPanelWidth { get; set; }
+    public double AppListHeight { get; set; }
 
     private static readonly string StatePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
