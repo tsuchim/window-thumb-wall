@@ -22,6 +22,12 @@ This data is used only by the application to restore its state and is not transm
 
 To remove the stored state, close WindowThumbWall and delete the file above. The next time the application starts, it recreates the file as needed without the previous entries.
 
+Uninstall behavior by package type:
+
+- MSI: uninstall removes this local data folder for the current user.
+- MSIX (Store package): uninstall removes the packaged app data container.
+- ZIP (portable): no uninstaller, so remove the file/folder manually if needed.
+
 ## Third-Party Services
 
 This application does not use third-party analytics, tracking services, or advertising networks.
