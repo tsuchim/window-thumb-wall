@@ -32,23 +32,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract and validate version from tag
+      - name: Normalize version from tag for Store
         id: versioning
         shell: pwsh
         run: |
-          $tag = $env:GITHUB_REF -replace 'refs/tags/', ''
-          if ($tag -notmatch '^v\d+\.\d+\.\d+(\.\d+)?$') {
-            Write-Error "Tag $tag does not match format vX.Y.Z or vX.Y.Z.W"
+          $tag = $env:GITHUB_REF -replace 'refs/tags/v', ''
+          if ($tag -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
+            Write-Error "Tag v$tag does not match format vX.Y.Z or vX.Y.Z.W"
             exit 1
           }
-          $parts = $tag.Substring(1).Split('.')
-          if ($parts.Length -eq 3) {
-            $version = "$($parts[0]).$($parts[1]).$($parts[2]).0"
+          $v = [version]$tag
+          $major = $v.Major
+          $minor = $v.Minor
+          $build = $v.Build # Z
+          $revision = if ($v.Revision -ge 0) { $v.Revision } else { 0 } # W
+
+          # Store requires revision (4th part) to be 0.
+          # For 4-part tags, keep uniqueness/monotony by packing Z and W into Z*1000 + W.
+          if ($v.Revision -ge 0) {
+            $newBuild = $build * 1000 + $revision
           } else {
-            $version = $parts -join '.'
+            $newBuild = $build
           }
-          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
-          Write-Host "Publishing version: $version"
+          if ($newBuild -gt 65535) {
+            Write-Error "Resulting build number $newBuild exceeds 65535 (from tag v$tag). Store version part limit reached."
+            exit 1
+          }
+          $storeVersion = "$major.$minor.$newBuild.0"
+
+          Write-Host "Tag version: v$tag"
+          Write-Host "Store manifest version: $storeVersion"
+          "version=$storeVersion" >> $env:GITHUB_OUTPUT
+          Write-Host "Publishing Store manifest version: $storeVersion"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -81,7 +96,7 @@ jobs:
         shell: pwsh
         run: |
           $manifestPath = "packaging/Package.appxmanifest"
-          $newVersion = "${{ steps.versioning.outputs.VERSION }}"
+          $newVersion = "${{ steps.versioning.outputs.version }}"
           $identityName = "tsuchim.WindowThumbWall"
           $identityPublisher = "CN=F6D2388F-2B1D-4A95-BC62-2D5CDADC605B"
           $publisherDisplayName = "tsuchim"
