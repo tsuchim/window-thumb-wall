@@ -55,21 +55,32 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Locate MSBuild
+        id: msbuild
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe not found at $vswhere"
+          }
+
+          $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' |
+            Select-Object -First 1
+
+          if (-not $msbuild) {
+            throw 'MSBuild.exe not found via vswhere.'
+          }
+
+          "msbuild_path=$msbuild" >> $env:GITHUB_OUTPUT
+          Write-Host "Using MSBuild: $msbuild"
+
       - name: Restore
         run: dotnet restore WindowThumbWall.csproj
 
-      - name: Publish (Store version)
-        run: |
-          dotnet publish WindowThumbWall.csproj `
-            -c Release -r win-x64 --self-contained `
-            -p:PublishSingleFile=false `
-            -o publish-msix
-
-      - name: Patch AppxManifest version
+      - name: Patch Package.appxmanifest version
         shell: pwsh
         run: |
-          $manifestPath = "packaging\AppxManifest.xml"
-          $targetPath = "publish-msix\AppxManifest.xml"
+          $manifestPath = "packaging/Package.appxmanifest"
           $newVersion = "${{ steps.versioning.outputs.VERSION }}"
           $identityName = "tsuchim.WindowThumbWall"
           $identityPublisher = "CN=F6D2388F-2B1D-4A95-BC62-2D5CDADC605B"
@@ -105,30 +116,37 @@ jobs:
           $settings.NewLineChars = "`n"
           $settings.NewLineHandling = [System.Xml.NewLineHandling]::Replace
 
-          $writer = [System.Xml.XmlWriter]::Create($targetPath, $settings)
+          $writer = [System.Xml.XmlWriter]::Create($manifestPath, $settings)
           try {
             $xml.Save($writer)
           } finally {
             $writer.Dispose()
           }
 
-          Write-Host "Patched version to $newVersion in $targetPath"
+          Write-Host "Patched version to $newVersion in $manifestPath"
 
-      - name: Prepare Assets
-        run: |
-          Copy-Item packaging\Assets publish-msix\Assets -Recurse -Force
-
-      - name: Create MSIX
+      - name: Build Store Package
         shell: pwsh
         run: |
-          $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" -ErrorAction SilentlyContinue |
-                      Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $makeappx) {
-            throw "makeappx.exe not found. Ensure Windows SDK is installed."
+          $packageDir = Join-Path $PWD 'packaging\AppPackages'
+          if (Test-Path $packageDir) {
+            Remove-Item $packageDir -Recurse -Force
           }
-          $msix = Join-Path "publish-msix" "WindowThumbWall-${{ steps.versioning.outputs.VERSION }}-win-x64.msix"
-          & $makeappx pack /d "publish-msix" /p $msix /o
-          Write-Host "MSIX created: $msix"
+
+          & "${{ steps.msbuild.outputs.msbuild_path }}" packaging\WindowThumbWall.Package.wapproj `
+            /restore `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:AppxBundle=Always `
+            /p:AppxBundlePlatforms=x64 `
+            /p:UapAppxPackageBuildMode=StoreUpload `
+            /p:AppxPackageSigningEnabled=false `
+            /p:GenerateAppInstallerFile=false `
+            /p:AppxPackageDir="$packageDir\\"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "MSBuild packaging step failed with exit code $LASTEXITCODE"
+          }
 
       - name: Setup Store CLI
         uses: microsoft/microsoft-store-apppublisher@v1.2
@@ -138,22 +156,24 @@ jobs:
       - name: MSStore Publish
         shell: pwsh
         run: |
-          # Plan A only applies to already-live free Store products.
-          # The first run stays as a draft submission for safety.
-          $msix = Get-ChildItem (Join-Path $PWD "publish-msix") -Filter *.msix |
+          $packageDir = Join-Path $PWD 'packaging\AppPackages'
+
+          $package = Get-ChildItem $packageDir -Filter *_bundle.msixupload -Recurse |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
 
-          if (-not $msix) {
-            throw "No .msix file found under publish-msix."
+          if (-not $package) {
+            $package = Get-ChildItem $packageDir -Filter *.msixupload -Recurse |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1
           }
 
-          if (-not (Test-Path $msix.FullName)) {
-            throw "MSIX file does not exist: $($msix.FullName)"
+          if (-not $package) {
+            throw "No .msixupload file found under $packageDir"
           }
 
-          Write-Host "MSIX file: $($msix.FullName)"
-          Get-Item $msix.FullName | Format-Table Name,Length,LastWriteTime -Auto
+          Write-Host "Package file: $($package.FullName)"
+          Get-Item $package.FullName | Format-Table Name,Length,LastWriteTime -Auto
 
           msstore reconfigure `
             --tenantId "${{ secrets.AZURE_AD_TENANT_ID }}" `
@@ -161,7 +181,7 @@ jobs:
             --clientId "${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}" `
             --clientSecret "${{ secrets.AZURE_AD_APPLICATION_SECRET }}"
 
-          msstore publish "$($msix.FullName)" -id "${{ steps.prereq.outputs.store_product_id }}" -nc -v
+          msstore publish "$($package.FullName)" -id "${{ steps.prereq.outputs.store_product_id }}" -nc -v
 
       - name: MSStore Status
         shell: pwsh
