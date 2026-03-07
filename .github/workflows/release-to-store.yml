@@ -1,0 +1,188 @@
+# Publish to Microsoft Store via GitHub Actions
+
+name: Release to Microsoft Store
+
+on:
+  push:
+    tags:
+      - 'v*' # GitHub Actions filters use glob patterns
+
+jobs:
+  publish:
+    runs-on: windows-2025-vs2026
+    env:
+      STORE_PRODUCT_ID: ${{ vars.MSSTORE_PRODUCT_ID }}
+    
+    steps:
+      - name: Check prerequisites
+        id: prereq
+        shell: pwsh
+        run: |
+          $val = $env:STORE_PRODUCT_ID
+          if (-not $val) {
+            Write-Error "MSSTORE_PRODUCT_ID variable is missing from the repository variables."
+            exit 1
+          }
+          $normalized = $val.ToUpperInvariant()
+          if ($val -ne $normalized) {
+            Write-Host "Normalizing STORE_PRODUCT_ID to uppercase: $normalized"
+          }
+          "store_product_id=$normalized" >> $env:GITHUB_OUTPUT
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Derive Store version from vX.Y.Z tag
+        id: versioning
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF -replace 'refs/tags/v', ''
+          if ($tag -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Error "Tag v$tag does not match the required format vX.Y.Z"
+            exit 1
+          }
+          $parts = $tag.Split('.')
+          $storeVersion = "$($parts[0]).$($parts[1]).$($parts[2]).0"
+
+          Write-Host "Tag version: v$tag"
+          Write-Host "Store manifest version: $storeVersion"
+          "version=$storeVersion" >> $env:GITHUB_OUTPUT
+          Write-Host "Publishing Store manifest version: $storeVersion"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Locate MSBuild
+        id: msbuild
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe not found at $vswhere"
+          }
+
+          $msbuild = & $vswhere -latest -prerelease -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' |
+            Select-Object -First 1
+
+          if (-not $msbuild) {
+            throw 'MSBuild.exe not found via vswhere.'
+          }
+
+          "msbuild_path=$msbuild" >> $env:GITHUB_OUTPUT
+          Write-Host "Using MSBuild: $msbuild"
+
+      - name: Restore
+        run: dotnet restore WindowThumbWall.csproj
+
+      - name: Patch Package.appxmanifest version
+        shell: pwsh
+        run: |
+          $manifestPath = "packaging/Package.appxmanifest"
+          $newVersion = "${{ steps.versioning.outputs.version }}"
+          $identityName = "tsuchim.WindowThumbWall"
+          $identityPublisher = "CN=F6D2388F-2B1D-4A95-BC62-2D5CDADC605B"
+          $publisherDisplayName = "tsuchim"
+
+          $xml = New-Object System.Xml.XmlDocument
+          $xml.PreserveWhitespace = $true
+          $xml.Load($manifestPath)
+
+          $namespaceUri = $xml.DocumentElement.NamespaceURI
+          $namespaceManager = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+          $namespaceManager.AddNamespace("appx", $namespaceUri)
+
+          $identityNode = $xml.SelectSingleNode("/appx:Package/appx:Identity", $namespaceManager)
+          if (-not $identityNode) {
+            throw "Identity element not found in $manifestPath"
+          }
+
+          $identityNode.SetAttribute("Name", $identityName)
+          $identityNode.SetAttribute("Publisher", $identityPublisher)
+          $identityNode.SetAttribute("Version", $newVersion)
+
+          $publisherDisplayNameNode = $xml.SelectSingleNode("/appx:Package/appx:Properties/appx:PublisherDisplayName", $namespaceManager)
+          if (-not $publisherDisplayNameNode) {
+            throw "PublisherDisplayName element not found in $manifestPath"
+          }
+
+          $publisherDisplayNameNode.InnerText = $publisherDisplayName
+
+          $settings = New-Object System.Xml.XmlWriterSettings
+          $settings.Encoding = New-Object System.Text.UTF8Encoding($false)
+          $settings.Indent = $true
+          $settings.NewLineChars = "`n"
+          $settings.NewLineHandling = [System.Xml.NewLineHandling]::Replace
+
+          $writer = [System.Xml.XmlWriter]::Create($manifestPath, $settings)
+          try {
+            $xml.Save($writer)
+          } finally {
+            $writer.Dispose()
+          }
+
+          Write-Host "Patched version to $newVersion in $manifestPath"
+
+      - name: Build Store Package
+        shell: pwsh
+        run: |
+          $packageDir = Join-Path $PWD 'packaging\AppPackages'
+          if (Test-Path $packageDir) {
+            Remove-Item $packageDir -Recurse -Force
+          }
+
+          & "${{ steps.msbuild.outputs.msbuild_path }}" packaging\WindowThumbWall.Package.wapproj `
+            /restore `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:AppxBundle=Always `
+            /p:AppxBundlePlatforms=x64 `
+            /p:UapAppxPackageBuildMode=StoreUpload `
+            /p:AppxPackageSigningEnabled=false `
+            /p:GenerateAppInstallerFile=false `
+            /p:AppxPackageDir="$packageDir\\"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "MSBuild packaging step failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Setup Store CLI
+        uses: microsoft/microsoft-store-apppublisher@v1.2
+        with:
+          version: v0.3.9
+
+      - name: MSStore Publish
+        shell: pwsh
+        run: |
+          $packageDir = Join-Path $PWD 'packaging\AppPackages'
+
+          $package = Get-ChildItem $packageDir -Filter *_bundle.msixupload -Recurse |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if (-not $package) {
+            $package = Get-ChildItem $packageDir -Filter *.msixupload -Recurse |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1
+          }
+
+          if (-not $package) {
+            throw "No .msixupload file found under $packageDir"
+          }
+
+          Write-Host "Package file: $($package.FullName)"
+          Get-Item $package.FullName | Format-Table Name,Length,LastWriteTime -Auto
+
+          msstore reconfigure `
+            --tenantId "${{ secrets.AZURE_AD_TENANT_ID }}" `
+            --sellerId "${{ secrets.SELLER_ID }}" `
+            --clientId "${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}" `
+            --clientSecret "${{ secrets.AZURE_AD_APPLICATION_SECRET }}"
+
+          msstore publish "$($package.FullName)" -id "${{ steps.prereq.outputs.store_product_id }}" -v
+
+      - name: MSStore Status
+        shell: pwsh
+        run: |
+          msstore submission status "${{ steps.prereq.outputs.store_product_id }}"

@@ -1,10 +1,11 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using System.Collections.ObjectModel;
 
 namespace WindowThumbWall;
 
@@ -25,6 +26,7 @@ public partial class MainWindow : Window
     private bool _dragMoved;
     private Border? _dropPreviewLayer;
     private Window? _dragGhost;
+    private ShortcutGuideWindow? _shortcutGuideWindow;
 
     private bool _isFullScreen;
     private WindowStyle _savedWindowStyle;
@@ -34,6 +36,10 @@ public partial class MainWindow : Window
 
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly List<WindowInfo> _windowCache = [];
+    private readonly ObservableCollection<AutoAddAppEntry> _autoAddApps = [];
+    private readonly HashSet<string> _autoAddAppSet = new(StringComparer.OrdinalIgnoreCase);
+    private Point _appListDragStartPoint;
+    private string? _appListDragSourceProcessName;
 
     private uint _shellHookMsgId;
     private readonly HashSet<IntPtr> _flashingWindows = [];
@@ -46,6 +52,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        ApplyLocalization();
 
         // Restore window geometry before the window is shown.
         _pendingRestore = AppState.Load();
@@ -65,10 +72,17 @@ public partial class MainWindow : Window
         Closed += OnClosed;
         SizeChanged += OnSizeChanged;
         WindowList.MouseDoubleClick += WindowList_DoubleClick;
+        WindowList.PreviewMouseRightButtonDown += WindowList_RightClick;
+        AppList.PreviewMouseRightButtonDown += AppList_RightClick;
+        AppList.PreviewMouseLeftButtonDown += AppList_PreviewMouseLeftButtonDown;
+        AppList.PreviewMouseMove += AppList_PreviewMouseMove;
+        AppList.DragOver += AppList_DragOver;
+        AppList.Drop += AppList_Drop;
         FilterBox.TextChanged += FilterBox_TextChanged;
+        AppList.ItemsSource = _autoAddApps;
     }
 
-    // ── Lifecycle ────────────────────────────────────────────────
+    // Lifecycle
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -79,6 +93,8 @@ public partial class MainWindow : Window
         NativeMethods.RegisterShellHookWindow(_mainHwnd);
         HwndSource.FromHwnd(_mainHwnd)?.AddHook(WndProc);
 
+        RestorePanelLayout();
+        RestoreAutoAddApps();
         RestoreSlots();
         _timer.Start();
     }
@@ -94,7 +110,7 @@ public partial class MainWindow : Window
     private void OnSizeChanged(object sender, SizeChangedEventArgs e) =>
         Dispatcher.BeginInvoke(DispatcherPriority.Render, UpdateAllThumbnails);
 
-    // ── State persistence ─────────────────────────────────────────
+    // State persistence
 
     private void SaveState()
     {
@@ -112,7 +128,11 @@ public partial class MainWindow : Window
                 Width = bounds.Width,
                 Height = bounds.Height,
                 IsMaximized = !_isFullScreen && WindowState == WindowState.Maximized
-            }
+            },
+            LeftPanelWidth = GetPersistedLength(
+                _isFullScreen ? _savedLeftColWidth : LeftColumnDefinition.Width,
+                LeftPanel.ActualWidth),
+            AppListHeight = GetPersistedLength(AppListRowDefinition.Height, AppList.ActualHeight)
         };
 
         foreach (var slot in _slots)
@@ -120,12 +140,41 @@ public partial class MainWindow : Window
             if (!slot.IsOccupied) continue;
             state.Slots.Add(new SlotState
             {
-                ProcessName = NativeMethods.GetProcessName(slot.SourceHwnd),
+                ProcessName = slot.SourceProcessName,
                 Title = slot.SourceTitle
             });
         }
 
+        foreach (var app in _autoAddApps)
+            state.AutoAddApps.Add(app.ProcessName);
+
         state.Save();
+    }
+
+    private void RestorePanelLayout()
+    {
+        if (_pendingRestore == null) return;
+
+        if (_pendingRestore.LeftPanelWidth > 120)
+            LeftColumnDefinition.Width = new GridLength(_pendingRestore.LeftPanelWidth);
+
+        if (_pendingRestore.AppListHeight > 80)
+            AppListRowDefinition.Height = new GridLength(_pendingRestore.AppListHeight);
+    }
+
+    private static double GetPersistedLength(GridLength gridLength, double actualFallback)
+    {
+        if (gridLength.IsAbsolute && gridLength.Value > 0)
+            return gridLength.Value;
+        return actualFallback > 0 ? actualFallback : 0;
+    }
+
+    private void RestoreAutoAddApps()
+    {
+        if (_pendingRestore is not { AutoAddApps.Count: > 0 } state) return;
+
+        foreach (var app in state.AutoAddApps)
+            AddAppToAutoList(app);
     }
 
     private void RestoreSlots()
@@ -168,7 +217,7 @@ public partial class MainWindow : Window
 
             usedHandles.Add(match.Handle);
             int idx = AddSlot();
-            if (_slots[idx].Assign(match.Handle, match.Title))
+            if (_slots[idx].Assign(match.Handle, match.Title, match.ProcessName))
                 _cellLabels[idx].Text = match.Title;
         }
 
@@ -178,7 +227,7 @@ public partial class MainWindow : Window
         _pendingRestore = null;
     }
 
-    // ── Keyboard ─────────────────────────────────────────────────
+    // Keyboard
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
@@ -196,7 +245,7 @@ public partial class MainWindow : Window
         base.OnPreviewKeyDown(e);
     }
 
-    // ── Dynamic grid ─────────────────────────────────────────────
+    // Dynamic grid
 
     private static (int rows, int cols) CalcGridSize(int count)
     {
@@ -212,7 +261,7 @@ public partial class MainWindow : Window
 
         var label = new TextBlock
         {
-            Text = "(empty)",
+            Text = LocalizedText.Get("slot.empty"),
             Foreground = Brushes.LightGray,
             Padding = new Thickness(6, 3, 6, 3),
             FontSize = 12,
@@ -326,17 +375,19 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(DispatcherPriority.Render, UpdateAllThumbnails);
     }
 
-    // ── Timer ────────────────────────────────────────────────────
+    // Timer
 
     private void Timer_Tick(object? sender, EventArgs e)
     {
         RefreshWindowList();
+        RefreshAutoAddAppDisplayNames();
+        AutoAddWindowsForRegisteredApps();
         ValidateSlots();
         CheckFlashState();
         UpdateAllThumbnails();
     }
 
-    // ── Window list ──────────────────────────────────────────────
+    // Window list
 
     private void RefreshWindowList()
     {
@@ -348,7 +399,8 @@ public partial class MainWindow : Window
             _windowCache.Add(new WindowInfo
             {
                 Handle = hWnd,
-                Title = NativeMethods.GetWindowTitle(hWnd)
+                Title = NativeMethods.GetWindowTitle(hWnd),
+                ProcessName = NativeMethods.GetProcessName(hWnd)
             });
             return true;
         }, IntPtr.Zero);
@@ -363,7 +415,9 @@ public partial class MainWindow : Window
         var items = string.IsNullOrEmpty(filter)
             ? _windowCache.ToList()
             : _windowCache
-                .Where(w => w.Title.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                .Where(w =>
+                    w.Title.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                    w.ProcessName.Contains(filter, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
         var sel = WindowList.SelectedItem as WindowInfo;
@@ -375,10 +429,48 @@ public partial class MainWindow : Window
     private void WindowList_DoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (WindowList.SelectedItem is not WindowInfo info) return;
+        AddWindowToMonitor(info);
+    }
 
+    private void AddWindowToMonitor(WindowInfo info, int? insertIndex = null)
+    {
         // Skip if already assigned.
         foreach (var slot in _slots)
             if (slot.IsOccupied && slot.SourceHwnd == info.Handle) return;
+
+        if (insertIndex is int targetIndex)
+        {
+            targetIndex = Math.Clamp(targetIndex, 0, _slots.Count);
+
+            int sourceIndex = -1;
+            for (int i = 0; i < _slots.Count; i++)
+            {
+                if (!_slots[i].IsOccupied)
+                {
+                    sourceIndex = i;
+                    break;
+                }
+            }
+
+            bool createdNew = false;
+            if (sourceIndex == -1)
+            {
+                sourceIndex = AddSlot();
+                createdNew = true;
+            }
+
+            if (!_slots[sourceIndex].Assign(info.Handle, info.Title, info.ProcessName))
+            {
+                if (createdNew)
+                    RemoveSlot(sourceIndex);
+                return;
+            }
+
+            _cellLabels[sourceIndex].Text = info.Title;
+            if (sourceIndex != targetIndex)
+                InsertSlot(sourceIndex, targetIndex);
+            return;
+        }
 
         // First free slot.
         int target = -1;
@@ -391,15 +483,254 @@ public partial class MainWindow : Window
             }
         }
 
-        // No free slot → add a new one.
+        // No free slot -> add a new one.
         if (target == -1)
             target = AddSlot();
 
-        if (_slots[target].Assign(info.Handle, info.Title))
+        if (_slots[target].Assign(info.Handle, info.Title, info.ProcessName))
             _cellLabels[target].Text = info.Title;
     }
 
-    // ── Slot validation ──────────────────────────────────────────
+    private static T? FindVisualParent<T>(DependencyObject? source) where T : DependencyObject
+    {
+        while (source != null && source is not T)
+            source = VisualTreeHelper.GetParent(source);
+
+        return source as T;
+    }
+
+    private void WindowList_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not ListBox list) return;
+        var item = FindVisualParent<ListBoxItem>(e.OriginalSource as DependencyObject);
+        if (item == null) return;
+
+        item.IsSelected = true;
+        if (list.SelectedItem is not WindowInfo info) return;
+
+        var menu = new ContextMenu();
+        var addToMonitorItem = new MenuItem { Header = LocalizedText.Get("menu.addToMonitor") };
+        addToMonitorItem.Click += (_, _) => AddWindowToMonitor(info);
+
+        var addAppItem = new MenuItem { Header = LocalizedText.Get("menu.addApp") };
+        addAppItem.Click += (_, _) =>
+            AddAppToAutoList(info.ProcessName, ResolveDisplayNameFromWindow(info.Handle, info.ProcessName));
+
+        menu.Items.Add(addToMonitorItem);
+        menu.Items.Add(addAppItem);
+        menu.PlacementTarget = item;
+        menu.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private void AppList_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not ListBox list) return;
+        var item = FindVisualParent<ListBoxItem>(e.OriginalSource as DependencyObject);
+        if (item == null) return;
+
+        item.IsSelected = true;
+        if (list.SelectedItem is not AutoAddAppEntry app) return;
+        int index = _autoAddApps.IndexOf(app);
+
+        var menu = new ContextMenu();
+        var moveUpItem = new MenuItem { Header = LocalizedText.Get("menu.moveUp"), IsEnabled = index > 0 };
+        moveUpItem.Click += (_, _) => MoveAutoApp(index, index - 1);
+
+        var moveDownItem = new MenuItem
+        {
+            Header = LocalizedText.Get("menu.moveDown"),
+            IsEnabled = index >= 0 && index < _autoAddApps.Count - 1
+        };
+        moveDownItem.Click += (_, _) => MoveAutoApp(index, index + 1);
+
+        var removeItem = new MenuItem { Header = LocalizedText.Get("menu.removeAutoAdd") };
+        removeItem.Click += (_, _) => RemoveAppFromAutoList(app.ProcessName);
+        menu.Items.Add(moveUpItem);
+        menu.Items.Add(moveDownItem);
+        menu.Items.Add(removeItem);
+        menu.PlacementTarget = item;
+        menu.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private void AddAppToAutoList(string processName, string? displayName = null)
+    {
+        if (string.IsNullOrWhiteSpace(processName)) return;
+        if (!_autoAddAppSet.Add(processName))
+        {
+            if (!string.IsNullOrWhiteSpace(displayName))
+            {
+                int existingIndex = _autoAddApps
+                    .Select((app, idx) => new { app, idx })
+                    .FirstOrDefault(x => x.app.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase))
+                    ?.idx ?? -1;
+                if (existingIndex >= 0 && _autoAddApps[existingIndex].DisplayName != displayName)
+                    _autoAddApps[existingIndex].DisplayName = displayName;
+            }
+            return;
+        }
+
+        _autoAddApps.Add(new AutoAddAppEntry
+        {
+            ProcessName = processName,
+            DisplayName = string.IsNullOrWhiteSpace(displayName) ? processName : displayName
+        });
+    }
+
+    private void RemoveAppFromAutoList(string processName)
+    {
+        if (!_autoAddAppSet.Remove(processName)) return;
+
+        AutoAddAppEntry? existing = _autoAddApps.FirstOrDefault(a =>
+            a.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+            _autoAddApps.Remove(existing);
+    }
+
+    private void MoveAutoApp(int sourceIndex, int targetIndex)
+    {
+        if (sourceIndex < 0 || sourceIndex >= _autoAddApps.Count) return;
+        if (targetIndex < 0 || targetIndex >= _autoAddApps.Count) return;
+        if (sourceIndex == targetIndex) return;
+
+        AutoAddAppEntry item = _autoAddApps[sourceIndex];
+        _autoAddApps.RemoveAt(sourceIndex);
+        _autoAddApps.Insert(targetIndex, item);
+    }
+
+    private void AppList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _appListDragStartPoint = e.GetPosition(AppList);
+        var item = FindVisualParent<ListBoxItem>(e.OriginalSource as DependencyObject);
+        _appListDragSourceProcessName = (item?.DataContext as AutoAddAppEntry)?.ProcessName;
+    }
+
+    private void AppList_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed) return;
+        if (_appListDragSourceProcessName == null) return;
+
+        Point current = e.GetPosition(AppList);
+        Vector delta = current - _appListDragStartPoint;
+        if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance)
+            return;
+
+        string dragSource = _appListDragSourceProcessName;
+        _appListDragSourceProcessName = null;
+        DragDrop.DoDragDrop(AppList, new DataObject("WindowThumbWall.AppListItem", dragSource), DragDropEffects.Move);
+    }
+
+    private void AppList_DragOver(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent("WindowThumbWall.AppListItem"))
+            e.Effects = DragDropEffects.Move;
+        else
+            e.Effects = DragDropEffects.None;
+
+        e.Handled = true;
+    }
+
+    private void AppList_Drop(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent("WindowThumbWall.AppListItem")) return;
+        if (e.Data.GetData("WindowThumbWall.AppListItem") is not string sourceApp) return;
+
+        int sourceIndex = _autoAddApps
+            .Select((app, idx) => new { app.ProcessName, idx })
+            .FirstOrDefault(x => x.ProcessName.Equals(sourceApp, StringComparison.OrdinalIgnoreCase))
+            ?.idx ?? -1;
+        if (sourceIndex < 0) return;
+
+        int targetIndex = _autoAddApps.Count - 1;
+        var targetItem = FindVisualParent<ListBoxItem>(e.OriginalSource as DependencyObject);
+        if (targetItem != null)
+        {
+            int targetItemIndex = AppList.ItemContainerGenerator.IndexFromContainer(targetItem);
+            Point pos = e.GetPosition(targetItem);
+            targetIndex = pos.Y <= targetItem.ActualHeight / 2 ? targetItemIndex : targetItemIndex + 1;
+            if (sourceIndex < targetIndex)
+                targetIndex--;
+            targetIndex = Math.Clamp(targetIndex, 0, _autoAddApps.Count - 1);
+        }
+
+        MoveAutoApp(sourceIndex, targetIndex);
+    }
+
+    private void AutoAddWindowsForRegisteredApps()
+    {
+        if (_autoAddAppSet.Count == 0) return;
+
+        foreach (var info in _windowCache)
+        {
+            if (!_autoAddAppSet.Contains(info.ProcessName)) continue;
+
+            int insertIndex = FindInsertIndexForApp(info.ProcessName);
+            AddWindowToMonitor(info, insertIndex);
+        }
+    }
+
+    private int FindInsertIndexForApp(string processName)
+    {
+        int appIndex = _autoAddApps
+            .Select((app, idx) => new { app.ProcessName, idx })
+            .FirstOrDefault(x => x.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase))
+            ?.idx ?? -1;
+
+        if (appIndex < 0)
+            return _slots.Count;
+
+        var precedenceApps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i <= appIndex; i++)
+            precedenceApps.Add(_autoAddApps[i].ProcessName);
+
+        var hwndToProcess = _windowCache
+            .GroupBy(window => window.Handle)
+            .ToDictionary(group => group.Key, group => group.First().ProcessName);
+
+        int lastIndex = -1;
+        for (int i = 0; i < _slots.Count; i++)
+        {
+            if (!_slots[i].IsOccupied) continue;
+
+            string slotProcess = _slots[i].SourceProcessName;
+            if (string.IsNullOrWhiteSpace(slotProcess) &&
+                !hwndToProcess.TryGetValue(_slots[i].SourceHwnd, out slotProcess))
+            {
+                continue;
+            }
+
+            if (precedenceApps.Contains(slotProcess))
+                lastIndex = i;
+        }
+
+        return lastIndex + 1;
+    }
+
+    private void RefreshAutoAddAppDisplayNames()
+    {
+        for (int i = 0; i < _autoAddApps.Count; i++)
+        {
+            AutoAddAppEntry entry = _autoAddApps[i];
+            WindowInfo? matchingWindow = _windowCache.FirstOrDefault(w =>
+                w.ProcessName.Equals(entry.ProcessName, StringComparison.OrdinalIgnoreCase));
+            if (matchingWindow == null) continue;
+
+            string displayName = ResolveDisplayNameFromWindow(matchingWindow.Handle, entry.ProcessName);
+            if (displayName == entry.DisplayName) continue;
+
+            entry.DisplayName = displayName;
+        }
+    }
+
+    private string ResolveDisplayNameFromWindow(IntPtr hWnd, string fallbackProcessName)
+    {
+        string displayName = NativeMethods.GetAppDisplayName(hWnd);
+        return string.IsNullOrWhiteSpace(displayName) ? fallbackProcessName : displayName;
+    }
+
+    // Slot validation
 
     private void ValidateSlots()
     {
@@ -416,7 +747,7 @@ public partial class MainWindow : Window
             slot.UpdateThumbnail();
     }
 
-    // ── Cell interaction (click / menu / drag reorder) ───────────
+    // Cell interaction (click / menu / drag reorder)
 
     private void ActivateSlotWindow(int idx)
     {
@@ -482,10 +813,10 @@ public partial class MainWindow : Window
 
         var menu = new ContextMenu();
 
-        var clearItem = new MenuItem { Header = "選択解除", IsEnabled = idx < _slots.Count };
+        var clearItem = new MenuItem { Header = LocalizedText.Get("menu.unassign"), IsEnabled = idx < _slots.Count };
         clearItem.Click += (_, _) => { if (idx < _slots.Count) RemoveSlot(idx); };
 
-        var exitFullScreenItem = new MenuItem { Header = "全画面解除", IsEnabled = _isFullScreen };
+        var exitFullScreenItem = new MenuItem { Header = LocalizedText.Get("menu.exitFullscreen"), IsEnabled = _isFullScreen };
         exitFullScreenItem.Click += (_, _) => { if (_isFullScreen) ToggleFullScreen(); };
 
         menu.Items.Add(clearItem);
@@ -630,7 +961,7 @@ public partial class MainWindow : Window
         _dragGhost = null;
     }
 
-    // ── Flash detection (shell hook) ─────────────────────────────
+    // Flash detection (shell hook)
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
@@ -720,7 +1051,7 @@ public partial class MainWindow : Window
         _cellBorders[idx].BorderThickness = new Thickness(1);
     }
 
-    // ── Fullscreen ───────────────────────────────────────────────
+    // Fullscreen
 
     private void FullScreenButton_Click(object sender, RoutedEventArgs e) => ToggleFullScreen();
 

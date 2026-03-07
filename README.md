@@ -3,70 +3,70 @@
 [日本語 (README.ja.md)](README.ja.md)
 
 A WPF desktop application (.NET 10) that displays **live DWM thumbnails** of
-selected external windows in a flexible grid layout — no screen capture, no OBS.
+selected external windows in a flexible grid layout.
 
 ## Features
 
 | Feature | Detail |
 |---------|--------|
-| **Live thumbnails** | DWM Thumbnail API (`DwmRegisterThumbnail` / `DwmUpdateThumbnailProperties`) — zero CPU capture |
-| **Flexible grid** | Automatically grows from 1×1 to N×N as you add windows; shrinks when you remove them |
-| **Fullscreen mode** | **Enter** expands the monitor wall to full screen (hides sidebar & title bar); **Esc** or **Enter** to exit |
-| **Click to zoom** | Left-click a cell to maximize it across the entire grid; click again to restore |
-| **Window picker** | Searchable list of all visible top-level windows with real-time filter |
+| **Live thumbnails** | DWM Thumbnail API (`DwmRegisterThumbnail` / `DwmUpdateThumbnailProperties`) |
+| **Flexible grid** | Automatically grows from 1x1 to NxN as you add windows; shrinks when you remove them |
+| **Fullscreen mode** | **Enter** toggles fullscreen; **Esc** exits fullscreen |
+| **Shortcut guide window** | Click the shortcut hint text at the bottom of the left menu to open controls help |
+| **Internationalization** | UI and guide window automatically switch between **English** and **Japanese** based on OS UI language |
+| **Window picker** | Searchable list of visible top-level windows with real-time filter |
 | **Auto-cleanup** | Cells are removed automatically when source windows close |
 
 ## Quick Start
 
 1. Open `WindowThumbWall.slnx` in **Visual Studio 2026** (or later).
 2. **F5** to build & run.
-3. **Double-click** a window in the left panel → it appears in a new grid cell.
-4. **Right-click** a cell to remove it.
-5. **Enter** to go fullscreen.
+3. **Double-click** a window in the left panel to add it to the grid.
+4. Click the shortcut hint text in the bottom-left menu to show the controls window.
+5. Press **Enter** to toggle fullscreen.
 
 ## Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
-| `Enter` | Toggle fullscreen (thumbnail grid only) |
+| `Enter` | Toggle fullscreen |
 | `Esc` | Exit fullscreen |
 
 ## Architecture
 
 | File | Role |
 |------|------|
-| `NativeMethods.cs` | P/Invoke: DWM Thumbnail API, `EnumWindows`, coordinate helpers |
-| `ThumbHost.cs` | `HwndHost` subclass — creates a child HWND per cell |
+| `NativeMethods.cs` | P/Invoke wrappers and native helpers |
+| `ThumbHost.cs` | `HwndHost` subclass that creates a child HWND per cell |
 | `ThumbnailSlot.cs` | Manages DWM thumbnail lifecycle for one slot |
-| `WindowInfo.cs` | Data class for window-list items |
-| `MainWindow.xaml/.cs` | UI layout and main logic |
+| `WindowInfo.cs` | Data model for window-list items |
+| `MainWindow.xaml/.cs` | Main UI layout and interaction logic |
+| `LocalizedText.cs` | English/Japanese localized string table |
+| `ShortcutGuideWindow.cs` | Popup window that shows operation list |
 
 ## Download
 
 | Format | File | Notes |
 |--------|------|-------|
-| **ZIP** | `WindowThumbWall-v0.2-win-x64.zip` | Portable — extract and run |
-| **MSI** | `WindowThumbWall-v0.2-win-x64.msi` | Traditional installer (Program Files + Start Menu) |
-| **MSIX** | `WindowThumbWall-v0.2-win-x64.msix` | Modern package (requires sideloading or trusted cert) |
+| **ZIP** | `WindowThumbWall-v0.2-win-x64.zip` | Portable |
+| **MSI** | `WindowThumbWall-v0.2-win-x64.msi` | Installer (uninstall removes local app state for the uninstalling user) |
+| **MSIX** | `WindowThumbWall-v0.2-win-x64.msix` | Package (uninstall removes packaged app data) |
 
-All packages are **self-contained** (no .NET runtime install required).
+## Privacy Summary
+
+- WindowThumbWall does not collect or transmit personal information.
+- For display/restore, it stores only user-designated window entries and app names in local app data.
+- Thumbnails/screenshot-like window images are captured only for on-screen display and are not used for any other purpose.
+- Uninstall removes stored app data for MSIX packages, and for MSI packages it removes local app state for the uninstalling user (ZIP is portable and requires manual cleanup).
 
 ## Security / Code Signing
 
-Official release artifacts are built on **GitHub Actions** from version tags
-(`v*`) — only CI-built binaries are distributed.
-The workflow also runs on pull requests and manual dispatch for validation,
-but only tag-triggered builds are used for releases.
-
-Code signing via [SignPath Foundation](https://signpath.org/) is **planned**.
-Until signing is integrated, binaries are distributed **unsigned** and Windows
-SmartScreen / Defender may show warnings.
-
-See [Code Signing Policy](docs/code-signing-policy.md) for details.
+See [docs/code-signing-policy.md](docs/code-signing-policy.md).
+For privacy and local data handling, see [PRIVACY.md](PRIVACY.md).
 
 ## Release Process
 
-1. Create a GPG-signed tag (`git tag -s vX.Y`)
+1. Create a GPG-signed tag (`git tag -s vX.Y.Z`)
 2. Push the tag — GitHub Actions builds ZIP, MSI, and MSIX artifacts
 3. Download CI artifacts and manually attach them to a GitHub Release
 
@@ -75,22 +75,15 @@ See [docs/releasing.md](docs/releasing.md) for the full process.
 ## Building Packages
 
 ```powershell
-# Build all formats at once
 .\packaging\build-all.ps1
-
-# Or individually
-.\packaging\build-zip.ps1
-.\packaging\build-msi.ps1    # requires WiX (auto-installed)
-.\packaging\build-msix.ps1   # requires Windows SDK
 ```
 
 ## Requirements
 
-- **Windows 10** or later (Desktop Window Manager required)
-- **.NET 10** SDK
-- **Visual Studio 2026** (recommended)
+- Windows 10 or later
+- .NET 10 SDK
+- Visual Studio 2026 (recommended)
 
 ## License
 
-This project is licensed under the
-**GNU General Public License v3.0** — see [LICENSE](LICENSE) for details.
+GNU General Public License v3.0. See [LICENSE](LICENSE).

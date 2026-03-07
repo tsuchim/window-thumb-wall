@@ -1,9 +1,11 @@
 # Build outputs
 bin/
 obj/
+temp/
 
 # Visual Studio
 .vs/
+.vscode/
 *.user
 *.suo
 *.userosscache
@@ -23,3 +25,6 @@ publish-*/
 *.zip
 *.wixpdb
 cab*.cab
+
+# Handoff artifacts & logs
+docs/handoff/*-logs/
