@@ -1,9 +1,11 @@
 # Build outputs
 bin/
 obj/
+temp/
 
 # Visual Studio
 .vs/
+.vscode/
 *.user
 *.suo
 *.userosscache

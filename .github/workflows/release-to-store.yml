@@ -32,33 +32,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Normalize version from tag for Store
+      - name: Derive Store version from vX.Y.Z tag
         id: versioning
         shell: pwsh
         run: |
           $tag = $env:GITHUB_REF -replace 'refs/tags/v', ''
-          if ($tag -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
-            Write-Error "Tag v$tag does not match format vX.Y.Z or vX.Y.Z.W"
+          if ($tag -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Error "Tag v$tag does not match the required format vX.Y.Z"
             exit 1
           }
-          $v = [version]$tag
-          $major = $v.Major
-          $minor = $v.Minor
-          $build = $v.Build # Z
-          $revision = if ($v.Revision -ge 0) { $v.Revision } else { 0 } # W
-
-          # Store requires revision (4th part) to be 0.
-          # For 4-part tags, keep uniqueness/monotony by packing Z and W into Z*1000 + W.
-          if ($v.Revision -ge 0) {
-            $newBuild = $build * 1000 + $revision
-          } else {
-            $newBuild = $build
-          }
-          if ($newBuild -gt 65535) {
-            Write-Error "Resulting build number $newBuild exceeds 65535 (from tag v$tag). Store version part limit reached."
-            exit 1
-          }
-          $storeVersion = "$major.$minor.$newBuild.0"
+          $parts = $tag.Split('.')
+          $storeVersion = "$($parts[0]).$($parts[1]).$($parts[2]).0"
 
           Write-Host "Tag version: v$tag"
           Write-Host "Store manifest version: $storeVersion"

@@ -64,6 +64,14 @@ selected external windows in a flexible grid layout.
 See [docs/code-signing-policy.md](docs/code-signing-policy.md).
 For privacy and local data handling, see [PRIVACY.md](PRIVACY.md).
 
+## Release Process
+
+1. Create a GPG-signed tag (`git tag -s vX.Y.Z`)
+2. Push the tag — GitHub Actions builds ZIP, MSI, and MSIX artifacts
+3. Download CI artifacts and manually attach them to a GitHub Release
+
+See [docs/releasing.md](docs/releasing.md) for the full process.
+
 ## Building Packages
 
 ```powershell
