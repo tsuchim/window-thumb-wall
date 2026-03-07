@@ -1,4 +1,4 @@
-﻿<Window x:Class="WindowThumbWall.MainWindow"
+<Window x:Class="WindowThumbWall.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="WindowThumbWall"
@@ -8,35 +8,85 @@
         Background="#1E1E1E">
     <Grid x:Name="RootGrid">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="260"/>
+            <ColumnDefinition x:Name="LeftColumnDefinition" Width="260"/>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
         <!-- Left panel: window picker -->
-        <DockPanel Grid.Column="0" x:Name="LeftPanel" Margin="6">
-            <TextBlock DockPanel.Dock="Top"
-                       Text="🔍 Filter windows:"
-                       Foreground="#CCC" Margin="0,0,0,4" FontSize="13"/>
-            <TextBox DockPanel.Dock="Top"
+        <Grid Grid.Column="0" x:Name="LeftPanel" Margin="6">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0"
+                       x:Name="FilterLabel"
+                       Foreground="#E6E6E6" Margin="0,0,0,4" FontSize="13"/>
+            <TextBox Grid.Row="1"
                      x:Name="FilterBox"
                      Margin="0,0,0,6"/>
-            <TextBlock DockPanel.Dock="Bottom"
-                       x:Name="HintText"
-                       Text="Double-click → assign to grid.&#x0a;Left-click cell → activate window.&#x0a;Right-click cell → menu (unselect / exit fullscreen).&#x0a;Drag monitor area → reorder (with preview)."
-                       Foreground="#888" FontSize="11" TextWrapping="Wrap"
-                       Margin="0,6,0,0"/>
-            <Button DockPanel.Dock="Bottom"
+            <Grid Grid.Row="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="4"/>
+                    <RowDefinition x:Name="AppListRowDefinition" Height="180"/>
+                </Grid.RowDefinitions>
+                <ListBox Grid.Row="0"
+                         x:Name="WindowList"
+                         Background="#2D2D2D" Foreground="White"
+                         BorderThickness="0"
+                         DisplayMemberPath="Title">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="FontWeight" Value="Normal"/>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </ListBox>
+                <GridSplitter Grid.Row="1"
+                              Height="4"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch"
+                              ResizeDirection="Rows"
+                              ResizeBehavior="PreviousAndNext"
+                              Background="#444"/>
+                <Grid Grid.Row="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0"
+                               x:Name="AppListLabel"
+                               Foreground="#E6E6E6" Margin="0,6,0,4" FontSize="13"/>
+                    <ListBox Grid.Row="1"
+                             x:Name="AppList"
+                             AllowDrop="True"
+                             Background="#2D2D2D" Foreground="White"
+                             DisplayMemberPath="DisplayName"
+                             BorderThickness="0"/>
+                </Grid>
+            </Grid>
+            <Button Grid.Row="3"
                     x:Name="FullScreenButton"
-                    Content="⛶ Fullscreen (Enter)"
                     Click="FullScreenButton_Click"
                     Background="#444" Foreground="White" BorderThickness="0"
                     Padding="8,6" Margin="0,6,0,0" FontSize="13" Cursor="Hand"/>
-            <ListBox x:Name="WindowList"
-                     Background="#2D2D2D" Foreground="White"
-                     BorderThickness="0"
-                     DisplayMemberPath="Title"/>
-        </DockPanel>
+            <Button Grid.Row="4"
+                    x:Name="ShortcutGuideButton"
+                    Click="ShortcutGuideButton_Click"
+                    Background="#2D2D2D"
+                    Foreground="#E6E6E6"
+                    BorderBrush="#4A4A4A"
+                    BorderThickness="1"
+                    Padding="8,6"
+                    Margin="0,6,0,0"
+                    FontSize="11"
+                    FontWeight="Normal"
+                    HorizontalContentAlignment="Left"
+                    Cursor="Hand"/>
+        </Grid>
 
         <GridSplitter Grid.Column="1" x:Name="Splitter" Width="4"
                       HorizontalAlignment="Center" VerticalAlignment="Stretch"
@@ -46,4 +96,3 @@
         <Grid Grid.Column="2" x:Name="ThumbGrid" Margin="4"/>
     </Grid>
 </Window>
-    
