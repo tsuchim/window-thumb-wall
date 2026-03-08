@@ -41,7 +41,6 @@
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="WindowThumbWallDataDir" Name="WindowThumbWall">
         <Component Id="CleanupUserData" Guid="5b1941df-54b0-45a4-b95d-4a04c30418a7">
-          <RemoveFile Id="RemoveStateFile" Name="state.json" On="uninstall" />
           <RemoveFile Id="RemoveAnyStateFiles" Name="*" On="uninstall" />
           <RemoveFolder Id="RemoveDataDir" On="uninstall" />
           <RegistryValue Root="HKCU" Key="Software\tsuchim\WindowThumbWall"

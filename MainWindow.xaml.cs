@@ -11,6 +11,7 @@ namespace WindowThumbWall;
 
 public partial class MainWindow : Window
 {
+    private const int AutoAddMaintenanceIntervalTicks = 4;
     private const string SlotDragFormat = "WindowThumbWall.SlotIndex";
 
     private IntPtr _mainHwnd;
@@ -38,8 +39,10 @@ public partial class MainWindow : Window
     private readonly List<WindowInfo> _windowCache = [];
     private readonly ObservableCollection<AutoAddAppEntry> _autoAddApps = [];
     private readonly HashSet<string> _autoAddAppSet = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _appDisplayNameCache = new(StringComparer.OrdinalIgnoreCase);
     private Point _appListDragStartPoint;
     private string? _appListDragSourceProcessName;
+    private int _autoAddMaintenanceTick;
 
     private uint _shellHookMsgId;
     private readonly HashSet<IntPtr> _flashingWindows = [];
@@ -380,8 +383,15 @@ public partial class MainWindow : Window
     private void Timer_Tick(object? sender, EventArgs e)
     {
         RefreshWindowList();
-        RefreshAutoAddAppDisplayNames();
-        AutoAddWindowsForRegisteredApps();
+
+        _autoAddMaintenanceTick++;
+        if (_autoAddMaintenanceTick >= AutoAddMaintenanceIntervalTicks)
+        {
+            _autoAddMaintenanceTick = 0;
+            RefreshAutoAddAppDisplayNames();
+            AutoAddWindowsForRegisteredApps();
+        }
+
         ValidateSlots();
         CheckFlashState();
         UpdateAllThumbnails();
@@ -557,6 +567,10 @@ public partial class MainWindow : Window
     private void AddAppToAutoList(string processName, string? displayName = null)
     {
         if (string.IsNullOrWhiteSpace(processName)) return;
+
+        if (!string.IsNullOrWhiteSpace(displayName))
+            _appDisplayNameCache[processName] = displayName;
+
         if (!_autoAddAppSet.Add(processName))
         {
             if (!string.IsNullOrWhiteSpace(displayName))
@@ -581,6 +595,8 @@ public partial class MainWindow : Window
     private void RemoveAppFromAutoList(string processName)
     {
         if (!_autoAddAppSet.Remove(processName)) return;
+
+        _appDisplayNameCache.Remove(processName);
 
         AutoAddAppEntry? existing = _autoAddApps.FirstOrDefault(a =>
             a.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase));
@@ -662,62 +678,88 @@ public partial class MainWindow : Window
     {
         if (_autoAddAppSet.Count == 0) return;
 
+        Dictionary<string, int> nextInsertIndexByProcess = BuildAutoAddInsertIndexes();
+
         foreach (var info in _windowCache)
         {
             if (!_autoAddAppSet.Contains(info.ProcessName)) continue;
 
-            int insertIndex = FindInsertIndexForApp(info.ProcessName);
+            if (!nextInsertIndexByProcess.TryGetValue(info.ProcessName, out int insertIndex))
+                continue;
+
             AddWindowToMonitor(info, insertIndex);
+            nextInsertIndexByProcess[info.ProcessName] = Math.Min(insertIndex + 1, _slots.Count);
         }
     }
 
-    private int FindInsertIndexForApp(string processName)
+    private Dictionary<string, int> BuildAutoAddInsertIndexes()
     {
-        int appIndex = _autoAddApps
-            .Select((app, idx) => new { app.ProcessName, idx })
-            .FirstOrDefault(x => x.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase))
-            ?.idx ?? -1;
+        List<string> slotProcessNames = BuildOccupiedSlotProcessNames();
+        var nextInsertIndexByProcess = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        int lastMatchingSlotIndex = -1;
 
-        if (appIndex < 0)
-            return _slots.Count;
+        foreach (var app in _autoAddApps)
+        {
+            for (int i = lastMatchingSlotIndex + 1; i < slotProcessNames.Count; i++)
+            {
+                if (slotProcessNames[i].Equals(app.ProcessName, StringComparison.OrdinalIgnoreCase))
+                    lastMatchingSlotIndex = i;
+            }
 
-        var precedenceApps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i <= appIndex; i++)
-            precedenceApps.Add(_autoAddApps[i].ProcessName);
+            nextInsertIndexByProcess[app.ProcessName] = lastMatchingSlotIndex + 1;
+        }
 
+        return nextInsertIndexByProcess;
+    }
+
+    private List<string> BuildOccupiedSlotProcessNames()
+    {
         var hwndToProcess = _windowCache
             .GroupBy(window => window.Handle)
             .ToDictionary(group => group.Key, group => group.First().ProcessName);
+        var slotProcessNames = new List<string>(_slots.Count);
 
-        int lastIndex = -1;
-        for (int i = 0; i < _slots.Count; i++)
+        foreach (var slot in _slots)
         {
-            if (!_slots[i].IsOccupied) continue;
+            if (!slot.IsOccupied) continue;
 
-            string slotProcess = _slots[i].SourceProcessName;
+            string slotProcess = slot.SourceProcessName;
             if (string.IsNullOrWhiteSpace(slotProcess) &&
-                !hwndToProcess.TryGetValue(_slots[i].SourceHwnd, out slotProcess))
+                !hwndToProcess.TryGetValue(slot.SourceHwnd, out slotProcess))
             {
                 continue;
             }
 
-            if (precedenceApps.Contains(slotProcess))
-                lastIndex = i;
+            slotProcessNames.Add(slotProcess);
         }
 
-        return lastIndex + 1;
+        return slotProcessNames;
     }
 
     private void RefreshAutoAddAppDisplayNames()
     {
+        var representativeWindows = new Dictionary<string, IntPtr>(StringComparer.OrdinalIgnoreCase);
+        foreach (var window in _windowCache)
+        {
+            if (string.IsNullOrWhiteSpace(window.ProcessName) || representativeWindows.ContainsKey(window.ProcessName))
+                continue;
+
+            representativeWindows[window.ProcessName] = window.Handle;
+        }
+
         for (int i = 0; i < _autoAddApps.Count; i++)
         {
             AutoAddAppEntry entry = _autoAddApps[i];
-            WindowInfo? matchingWindow = _windowCache.FirstOrDefault(w =>
-                w.ProcessName.Equals(entry.ProcessName, StringComparison.OrdinalIgnoreCase));
-            if (matchingWindow == null) continue;
+            if (!representativeWindows.TryGetValue(entry.ProcessName, out IntPtr hWnd))
+                continue;
 
-            string displayName = ResolveDisplayNameFromWindow(matchingWindow.Handle, entry.ProcessName);
+            if (!_appDisplayNameCache.TryGetValue(entry.ProcessName, out string? displayName) ||
+                string.IsNullOrWhiteSpace(displayName))
+            {
+                displayName = ResolveDisplayNameFromWindow(hWnd, entry.ProcessName);
+                _appDisplayNameCache[entry.ProcessName] = displayName;
+            }
+
             if (displayName == entry.DisplayName) continue;
 
             entry.DisplayName = displayName;

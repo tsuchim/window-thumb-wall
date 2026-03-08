@@ -37,9 +37,9 @@
     </AppxManifest>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Assets\Square150x150Logo.png" />
-    <Content Include="Assets\Square44x44Logo.png" />
-    <Content Include="Assets\StoreLogo.png" />
+    <Content Include="Assets\icon-150.png" />
+    <Content Include="Assets\icon-44.png" />
+    <Content Include="Assets\icon-50.png" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\WindowThumbWall.csproj">

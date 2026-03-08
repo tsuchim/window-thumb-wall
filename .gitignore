@@ -26,5 +26,11 @@ publish-*/
 *.wixpdb
 cab*.cab
 
+# Solution files (using .slnx instead)
+*.sln
+
+# Test output directories
+dist-test*/
+
 # Handoff artifacts & logs
 docs/handoff/*-logs/
