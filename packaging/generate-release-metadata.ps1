@@ -45,6 +45,10 @@ function Get-HighlightsContent {
         if ($changesSection.Success -and -not [string]::IsNullOrWhiteSpace($changesSection.Groups[1].Value)) {
             return $changesSection.Groups[1].Value.Trim()
         }
+
+        if (-not [string]::IsNullOrWhiteSpace($rawContent)) {
+            return $rawContent
+        }
     }
 
     return $DefaultContent.Trim()
@@ -69,6 +73,10 @@ function Get-PreferredOrNull {
 
         if ($changesSection.Success -and -not [string]::IsNullOrWhiteSpace($changesSection.Groups[1].Value)) {
             return $changesSection.Groups[1].Value.Trim()
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($rawContent)) {
+            return $rawContent
         }
     }
 
