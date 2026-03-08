@@ -124,8 +124,12 @@ public sealed class ShortcutGuideWindow : Window
         if (FindScrollViewer(list) is ScrollViewer sv &&
             sv.ComputedVerticalScrollBarVisibility == Visibility.Visible)
         {
-            Height += SystemParameters.VerticalScrollBarWidth + 24;
-            list.UpdateLayout();
+            double extraHeight = sv.ExtentHeight - sv.ViewportHeight;
+            if (extraHeight > 0)
+            {
+                Height += extraHeight;
+                list.UpdateLayout();
+            }
         }
 
         MinWidth = ActualWidth;
