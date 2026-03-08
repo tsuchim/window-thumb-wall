@@ -102,6 +102,25 @@ jobs:
           Copy-Item packaging\AppxManifest.xml publish-msix -Force
           Copy-Item packaging\Assets publish-msix\Assets -Recurse -Force
 
+      - name: Patch MSIX manifest version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          $plainVersion = $env:VERSION -replace '^v', ''
+          if ($plainVersion -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Error "VERSION $($env:VERSION) does not match vX.Y.Z"
+            exit 1
+          }
+
+          $versionParts = $plainVersion.Split('.')
+          $packageVersion = "$($versionParts[0]).$($versionParts[1]).$($versionParts[2]).0"
+          $manifestPath = 'publish-msix\AppxManifest.xml'
+
+          [xml]$xml = Get-Content $manifestPath
+          $xml.Package.Identity.Version = $packageVersion
+          $xml.Save((Resolve-Path $manifestPath))
+
+          Write-Host "Patched MSIX manifest version to $packageVersion"
+
       - name: Create MSIX
         run: |
           $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" -ErrorAction SilentlyContinue |
@@ -111,6 +130,11 @@ jobs:
             exit 1
           }
           & $makeappx pack /d publish-msix /p "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-x64.msix" /o
+
+      # ── Generate Metadata ─────────────────────────────────────
+      - name: Generate release metadata
+        run: |
+          .\packaging\generate-release-metadata.ps1 -Version "$env:VERSION" -OutputDir "$env:DIST_DIR"
 
       # ── Upload artifacts ───────────────────────────────────────
       # These unsigned artifacts will be signed via SignPath in a future step.
@@ -122,6 +146,9 @@ jobs:
             ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-x64.zip
             ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-x64.msi
             ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-x64.msix
+            ${{ env.DIST_DIR }}/release-notes.md
+            ${{ env.DIST_DIR }}/store-listing-*.md
+            ${{ env.DIST_DIR }}/store-whats-new-*.md
           if-no-files-found: error
 
   release:
@@ -143,6 +170,11 @@ jobs:
       - name: Create draft GitHub Release and upload assets
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b
         with:
+          name: WindowThumbWall ${{ env.GITHUB_REF_NAME }}
+          body_path: ${{ env.DIST_DIR }}/release-notes.md
           draft: true
-          files: ${{ env.DIST_DIR }}/*
+          files: |
+            ${{ env.DIST_DIR }}/*.zip
+            ${{ env.DIST_DIR }}/*.msi
+            ${{ env.DIST_DIR }}/*.msix
           fail_on_unmatched_files: true

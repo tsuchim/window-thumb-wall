@@ -10,6 +10,9 @@ internal sealed class ThumbnailSlot
     private readonly ThumbHost _host;
     private readonly IntPtr _ownerHwnd;
     private IntPtr _thumbId;
+    private bool _hasAppliedState;
+    private bool _lastVisible;
+    private NativeMethods.RECT _lastDestination;
 
     internal IntPtr SourceHwnd { get; private set; }
     internal string SourceTitle { get; private set; } = string.Empty;
@@ -34,6 +37,7 @@ internal sealed class ThumbnailSlot
         SourceHwnd = sourceHwnd;
         SourceTitle = title;
         SourceProcessName = processName;
+        _hasAppliedState = false;
         UpdateThumbnail();
         return true;
     }
@@ -48,6 +52,7 @@ internal sealed class ThumbnailSlot
         SourceHwnd = IntPtr.Zero;
         SourceTitle = string.Empty;
         SourceProcessName = string.Empty;
+        _hasAppliedState = false;
     }
 
     /// <summary>
@@ -62,12 +67,20 @@ internal sealed class ThumbnailSlot
         // If the host HWND is hidden (e.g. cell collapsed), hide the DWM thumbnail.
         if (!NativeMethods.IsWindowVisible(_host.Hwnd))
         {
+            if (_hasAppliedState && !_lastVisible)
+                return;
+
             var hide = new NativeMethods.DWM_THUMBNAIL_PROPERTIES
             {
                 dwFlags = NativeMethods.DWM_TNP_VISIBLE,
                 fVisible = false
             };
-            NativeMethods.DwmUpdateThumbnailProperties(_thumbId, ref hide);
+            int hr = NativeMethods.DwmUpdateThumbnailProperties(_thumbId, ref hide);
+            if (hr == 0)
+            {
+                _hasAppliedState = true;
+                _lastVisible = false;
+            }
             return;
         }
 
@@ -84,20 +97,30 @@ internal sealed class ThumbnailSlot
         int top    = hostPt.Y - mainPt.Y;
         int right  = left + hostRect.Right;
         int bottom = top + hostRect.Bottom;
+        var destination = new NativeMethods.RECT
+        {
+            Left = left,
+            Top = top,
+            Right = right,
+            Bottom = bottom
+        };
+
+        if (_hasAppliedState && _lastVisible && RectEquals(_lastDestination, destination))
+            return;
 
         var props = new NativeMethods.DWM_THUMBNAIL_PROPERTIES
         {
             dwFlags = NativeMethods.DWM_TNP_RECTDESTINATION | NativeMethods.DWM_TNP_VISIBLE,
-            rcDestination = new NativeMethods.RECT
-            {
-                Left = left,
-                Top = top,
-                Right = right,
-                Bottom = bottom
-            },
+            rcDestination = destination,
             fVisible = true
         };
-        NativeMethods.DwmUpdateThumbnailProperties(_thumbId, ref props);
+        int updateHr = NativeMethods.DwmUpdateThumbnailProperties(_thumbId, ref props);
+        if (updateHr == 0)
+        {
+            _hasAppliedState = true;
+            _lastVisible = true;
+            _lastDestination = destination;
+        }
     }
 
     /// <summary>
@@ -113,4 +136,15 @@ internal sealed class ThumbnailSlot
         }
         return true;
     }
+
+    internal void UpdateSourceTitle(string title)
+    {
+        SourceTitle = title;
+    }
+
+    private static bool RectEquals(NativeMethods.RECT a, NativeMethods.RECT b) =>
+        a.Left == b.Left &&
+        a.Top == b.Top &&
+        a.Right == b.Right &&
+        a.Bottom == b.Bottom;
 }

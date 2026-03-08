@@ -11,7 +11,10 @@ namespace WindowThumbWall;
 
 public partial class MainWindow : Window
 {
+    private const int AutoAddMaintenanceIntervalTicks = 4;
     private const string SlotDragFormat = "WindowThumbWall.SlotIndex";
+    private const double DeadspaceWeight = 1.0;
+    private const double DistortionWeight = 0.9;
 
     private IntPtr _mainHwnd;
 
@@ -34,12 +37,15 @@ public partial class MainWindow : Window
     private GridLength _savedLeftColWidth;
     private GridLength _savedSplitterColWidth;
 
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(1000) };
+    private readonly DispatcherTimer _stateSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly List<WindowInfo> _windowCache = [];
     private readonly ObservableCollection<AutoAddAppEntry> _autoAddApps = [];
     private readonly HashSet<string> _autoAddAppSet = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _appDisplayNameCache = new(StringComparer.OrdinalIgnoreCase);
     private Point _appListDragStartPoint;
     private string? _appListDragSourceProcessName;
+    private int _autoAddMaintenanceTick;
 
     private uint _shellHookMsgId;
     private readonly HashSet<IntPtr> _flashingWindows = [];
@@ -48,6 +54,12 @@ public partial class MainWindow : Window
     static MainWindow() => NormalBorderBrush.Freeze();
 
     private AppState? _pendingRestore;
+    private bool _stateTrackingEnabled;
+    private bool _gridRebuildPending;
+    private bool _thumbnailUpdatePending;
+    private int _lastGridItemCount = -1;
+    private int _lastGridRows = -1;
+    private int _lastGridCols = -1;
 
     public MainWindow()
     {
@@ -68,9 +80,13 @@ public partial class MainWindow : Window
         }
 
         _timer.Tick += Timer_Tick;
+        _stateSaveTimer.Tick += StateSaveTimer_Tick;
         Loaded += OnLoaded;
         Closed += OnClosed;
+        LocationChanged += OnLocationChanged;
         SizeChanged += OnSizeChanged;
+        LeftPanel.SizeChanged += OnPanelSizeChanged;
+        AppList.SizeChanged += OnPanelSizeChanged;
         WindowList.MouseDoubleClick += WindowList_DoubleClick;
         WindowList.PreviewMouseRightButtonDown += WindowList_RightClick;
         AppList.PreviewMouseRightButtonDown += AppList_RightClick;
@@ -97,18 +113,35 @@ public partial class MainWindow : Window
         RestoreAutoAddApps();
         RestoreSlots();
         _timer.Start();
+        _stateTrackingEnabled = true;
     }
 
     private void OnClosed(object? sender, EventArgs e)
     {
         _timer.Stop();
+        _stateSaveTimer.Stop();
+        _stateTrackingEnabled = false;
         NativeMethods.DeregisterShellHookWindow(_mainHwnd);
         SaveState();
         foreach (var slot in _slots) slot.Clear();
     }
 
-    private void OnSizeChanged(object sender, SizeChangedEventArgs e) =>
-        Dispatcher.BeginInvoke(DispatcherPriority.Render, UpdateAllThumbnails);
+    private void OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        RequestStateSave();
+        RequestGridRebuild();
+    }
+
+    private void OnLocationChanged(object? sender, EventArgs e) => RequestStateSave();
+
+    private void OnPanelSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.WidthChanged || e.HeightChanged)
+        {
+            RequestStateSave();
+            RequestGridRebuild();
+        }
+    }
 
     // State persistence
 
@@ -149,6 +182,19 @@ public partial class MainWindow : Window
             state.AutoAddApps.Add(app.ProcessName);
 
         state.Save();
+    }
+
+    private void RequestStateSave()
+    {
+        if (!_stateTrackingEnabled) return;
+        _stateSaveTimer.Stop();
+        _stateSaveTimer.Start();
+    }
+
+    private void StateSaveTimer_Tick(object? sender, EventArgs e)
+    {
+        _stateSaveTimer.Stop();
+        SaveState();
     }
 
     private void RestorePanelLayout()
@@ -247,12 +293,74 @@ public partial class MainWindow : Window
 
     // Dynamic grid
 
-    private static (int rows, int cols) CalcGridSize(int count)
+    private (int rows, int cols) CalcGridSize(int count)
     {
         if (count <= 0) return (1, 1);
-        int cols = (int)Math.Ceiling(Math.Sqrt(count));
-        int rows = (int)Math.Ceiling((double)count / cols);
-        return (rows, cols);
+
+        double width = Math.Max(ThumbGrid.ActualWidth, 1);
+        double height = Math.Max(ThumbGrid.ActualHeight, 1);
+
+        if (width <= 1 || height <= 1)
+        {
+            int fallbackCols = (int)Math.Ceiling(Math.Sqrt(count));
+            int fallbackRows = (int)Math.Ceiling((double)count / fallbackCols);
+            return (fallbackRows, fallbackCols);
+        }
+
+        var aspectRatios = CollectActiveAspectRatios(width / height);
+
+        double bestScore = double.PositiveInfinity;
+        double bestDeadspace = double.PositiveInfinity;
+        int bestRows = 1;
+        int bestCols = count;
+
+        for (int rows = 1; rows <= count; rows++)
+        {
+            int cols = (int)Math.Ceiling((double)count / rows);
+            int totalCells = rows * cols;
+            double deadspace = (double)(totalCells - count) / totalCells;
+            double cellAspect = (width * rows) / (height * cols);
+
+            double distortion = 0;
+            for (int i = 0; i < aspectRatios.Count; i++)
+            {
+                double ratio = cellAspect / Math.Max(aspectRatios[i], 0.01);
+                double delta = Math.Log(ratio);
+                distortion += delta * delta;
+            }
+            distortion /= aspectRatios.Count;
+
+            double score = DeadspaceWeight * deadspace + DistortionWeight * distortion;
+            bool isBetter = score < bestScore - 0.000001;
+            bool tieButLessDeadspace = Math.Abs(score - bestScore) <= 0.000001 && deadspace < bestDeadspace;
+
+            if (isBetter || tieButLessDeadspace)
+            {
+                bestScore = score;
+                bestDeadspace = deadspace;
+                bestRows = rows;
+                bestCols = cols;
+            }
+        }
+
+        return (bestRows, bestCols);
+    }
+
+    private List<double> CollectActiveAspectRatios(double fallback)
+    {
+        var ratios = new List<double>();
+        for (int i = 0; i < _slots.Count; i++)
+        {
+            if (!_slots[i].IsOccupied) continue;
+            double ratio = NativeMethods.GetWindowAspectRatio(_slots[i].SourceHwnd, fallback);
+            if (ratio > 0.01)
+                ratios.Add(ratio);
+        }
+
+        if (ratios.Count == 0)
+            ratios.Add(Math.Max(fallback, 0.01));
+
+        return ratios;
     }
 
     private int AddSlot()
@@ -347,22 +455,42 @@ public partial class MainWindow : Window
         }
 
         RebuildGrid();
+        RequestStateSave();
     }
 
     private void RebuildGrid()
     {
         int count = _cellBorders.Count;
-        ThumbGrid.RowDefinitions.Clear();
-        ThumbGrid.ColumnDefinitions.Clear();
-
-        if (count == 0) return;
+        if (count == 0)
+        {
+            if (_lastGridItemCount != 0 || _lastGridRows != 0 || _lastGridCols != 0)
+            {
+                ThumbGrid.RowDefinitions.Clear();
+                ThumbGrid.ColumnDefinitions.Clear();
+                _lastGridItemCount = 0;
+                _lastGridRows = 0;
+                _lastGridCols = 0;
+            }
+            return;
+        }
 
         var (rows, cols) = CalcGridSize(count);
 
-        for (int r = 0; r < rows; r++)
-            ThumbGrid.RowDefinitions.Add(new RowDefinition());
-        for (int c = 0; c < cols; c++)
-            ThumbGrid.ColumnDefinitions.Add(new ColumnDefinition());
+        bool gridShapeChanged = _lastGridItemCount != count || _lastGridRows != rows || _lastGridCols != cols;
+        if (gridShapeChanged)
+        {
+            ThumbGrid.RowDefinitions.Clear();
+            ThumbGrid.ColumnDefinitions.Clear();
+
+            for (int r = 0; r < rows; r++)
+                ThumbGrid.RowDefinitions.Add(new RowDefinition());
+            for (int c = 0; c < cols; c++)
+                ThumbGrid.ColumnDefinitions.Add(new ColumnDefinition());
+
+            _lastGridItemCount = count;
+            _lastGridRows = rows;
+            _lastGridCols = cols;
+        }
 
         for (int i = 0; i < count; i++)
         {
@@ -372,7 +500,18 @@ public partial class MainWindow : Window
             Grid.SetColumnSpan(_cellBorders[i], 1);
         }
 
-        Dispatcher.BeginInvoke(DispatcherPriority.Render, UpdateAllThumbnails);
+        RequestThumbnailUpdate();
+    }
+
+    private void RequestGridRebuild()
+    {
+        if (_gridRebuildPending || _cellBorders.Count == 0) return;
+        _gridRebuildPending = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Render, () =>
+        {
+            _gridRebuildPending = false;
+            RebuildGrid();
+        });
     }
 
     // Timer
@@ -380,11 +519,17 @@ public partial class MainWindow : Window
     private void Timer_Tick(object? sender, EventArgs e)
     {
         RefreshWindowList();
-        RefreshAutoAddAppDisplayNames();
-        AutoAddWindowsForRegisteredApps();
+        SyncMonitoredSlotTitles();
+
+        _autoAddMaintenanceTick++;
+        if (_autoAddMaintenanceTick >= AutoAddMaintenanceIntervalTicks)
+        {
+            _autoAddMaintenanceTick = 0;
+            RefreshAutoAddAppDisplayNames();
+            AutoAddWindowsForRegisteredApps();
+        }
         ValidateSlots();
         CheckFlashState();
-        UpdateAllThumbnails();
     }
 
     // Window list
@@ -405,6 +550,35 @@ public partial class MainWindow : Window
             return true;
         }, IntPtr.Zero);
         ApplyFilter();
+    }
+
+    private void SyncMonitoredSlotTitles()
+    {
+        if (_slots.Count == 0) return;
+
+        var titleByHandle = new Dictionary<IntPtr, string>();
+        foreach (var item in _windowCache)
+            titleByHandle[item.Handle] = item.Title;
+
+        bool changed = false;
+        for (int i = 0; i < _slots.Count; i++)
+        {
+            if (!_slots[i].IsOccupied) continue;
+
+            string latestTitle = titleByHandle.TryGetValue(_slots[i].SourceHwnd, out string? titleFromList)
+                ? titleFromList
+                : NativeMethods.GetWindowTitle(_slots[i].SourceHwnd);
+
+            if (string.IsNullOrWhiteSpace(latestTitle)) continue;
+            if (string.Equals(_slots[i].SourceTitle, latestTitle, StringComparison.Ordinal)) continue;
+
+            _slots[i].UpdateSourceTitle(latestTitle);
+            _cellLabels[i].Text = latestTitle;
+            changed = true;
+        }
+
+        if (changed)
+            RequestStateSave();
     }
 
     private void FilterBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyFilter();
@@ -469,6 +643,8 @@ public partial class MainWindow : Window
             _cellLabels[sourceIndex].Text = info.Title;
             if (sourceIndex != targetIndex)
                 InsertSlot(sourceIndex, targetIndex);
+            else
+                RequestStateSave();
             return;
         }
 
@@ -488,7 +664,10 @@ public partial class MainWindow : Window
             target = AddSlot();
 
         if (_slots[target].Assign(info.Handle, info.Title, info.ProcessName))
+        {
             _cellLabels[target].Text = info.Title;
+            RequestStateSave();
+        }
     }
 
     private static T? FindVisualParent<T>(DependencyObject? source) where T : DependencyObject
@@ -557,6 +736,10 @@ public partial class MainWindow : Window
     private void AddAppToAutoList(string processName, string? displayName = null)
     {
         if (string.IsNullOrWhiteSpace(processName)) return;
+
+        if (!string.IsNullOrWhiteSpace(displayName))
+            _appDisplayNameCache[processName] = displayName;
+
         if (!_autoAddAppSet.Add(processName))
         {
             if (!string.IsNullOrWhiteSpace(displayName))
@@ -566,7 +749,10 @@ public partial class MainWindow : Window
                     .FirstOrDefault(x => x.app.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase))
                     ?.idx ?? -1;
                 if (existingIndex >= 0 && _autoAddApps[existingIndex].DisplayName != displayName)
+                {
                     _autoAddApps[existingIndex].DisplayName = displayName;
+                    RequestStateSave();
+                }
             }
             return;
         }
@@ -576,16 +762,22 @@ public partial class MainWindow : Window
             ProcessName = processName,
             DisplayName = string.IsNullOrWhiteSpace(displayName) ? processName : displayName
         });
+        RequestStateSave();
     }
 
     private void RemoveAppFromAutoList(string processName)
     {
         if (!_autoAddAppSet.Remove(processName)) return;
 
+        _appDisplayNameCache.Remove(processName);
+
         AutoAddAppEntry? existing = _autoAddApps.FirstOrDefault(a =>
             a.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase));
         if (existing != null)
+        {
             _autoAddApps.Remove(existing);
+            RequestStateSave();
+        }
     }
 
     private void MoveAutoApp(int sourceIndex, int targetIndex)
@@ -597,6 +789,7 @@ public partial class MainWindow : Window
         AutoAddAppEntry item = _autoAddApps[sourceIndex];
         _autoAddApps.RemoveAt(sourceIndex);
         _autoAddApps.Insert(targetIndex, item);
+        RequestStateSave();
     }
 
     private void AppList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -662,62 +855,77 @@ public partial class MainWindow : Window
     {
         if (_autoAddAppSet.Count == 0) return;
 
+        Dictionary<string, int> nextInsertIndexByProcess = BuildAutoAddInsertIndexes();
+
         foreach (var info in _windowCache)
         {
             if (!_autoAddAppSet.Contains(info.ProcessName)) continue;
 
-            int insertIndex = FindInsertIndexForApp(info.ProcessName);
+            if (!nextInsertIndexByProcess.TryGetValue(info.ProcessName, out int insertIndex))
+                continue;
+
             AddWindowToMonitor(info, insertIndex);
+            nextInsertIndexByProcess[info.ProcessName] = Math.Min(insertIndex + 1, _slots.Count);
         }
     }
 
-    private int FindInsertIndexForApp(string processName)
+    private Dictionary<string, int> BuildAutoAddInsertIndexes()
     {
-        int appIndex = _autoAddApps
-            .Select((app, idx) => new { app.ProcessName, idx })
-            .FirstOrDefault(x => x.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase))
-            ?.idx ?? -1;
-
-        if (appIndex < 0)
-            return _slots.Count;
-
-        var precedenceApps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i <= appIndex; i++)
-            precedenceApps.Add(_autoAddApps[i].ProcessName);
-
         var hwndToProcess = _windowCache
             .GroupBy(window => window.Handle)
             .ToDictionary(group => group.Key, group => group.First().ProcessName);
+        var nextInsertIndexByProcess = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        int lastMatchingSlotIndex = -1;
 
-        int lastIndex = -1;
-        for (int i = 0; i < _slots.Count; i++)
+        foreach (var app in _autoAddApps)
         {
-            if (!_slots[i].IsOccupied) continue;
-
-            string slotProcess = _slots[i].SourceProcessName;
-            if (string.IsNullOrWhiteSpace(slotProcess) &&
-                !hwndToProcess.TryGetValue(_slots[i].SourceHwnd, out slotProcess))
+            for (int i = lastMatchingSlotIndex + 1; i < _slots.Count; i++)
             {
-                continue;
+                var slot = _slots[i];
+                if (!slot.IsOccupied)
+                    continue;
+
+                string slotProcess = slot.SourceProcessName;
+                if (string.IsNullOrWhiteSpace(slotProcess) &&
+                    !hwndToProcess.TryGetValue(slot.SourceHwnd, out slotProcess))
+                {
+                    continue;
+                }
+
+                if (slotProcess.Equals(app.ProcessName, StringComparison.OrdinalIgnoreCase))
+                    lastMatchingSlotIndex = i;
             }
 
-            if (precedenceApps.Contains(slotProcess))
-                lastIndex = i;
+            nextInsertIndexByProcess[app.ProcessName] = lastMatchingSlotIndex + 1;
         }
 
-        return lastIndex + 1;
+        return nextInsertIndexByProcess;
     }
 
     private void RefreshAutoAddAppDisplayNames()
     {
+        var representativeWindows = new Dictionary<string, IntPtr>(StringComparer.OrdinalIgnoreCase);
+        foreach (var window in _windowCache)
+        {
+            if (string.IsNullOrWhiteSpace(window.ProcessName) || representativeWindows.ContainsKey(window.ProcessName))
+                continue;
+
+            representativeWindows[window.ProcessName] = window.Handle;
+        }
+
         for (int i = 0; i < _autoAddApps.Count; i++)
         {
             AutoAddAppEntry entry = _autoAddApps[i];
-            WindowInfo? matchingWindow = _windowCache.FirstOrDefault(w =>
-                w.ProcessName.Equals(entry.ProcessName, StringComparison.OrdinalIgnoreCase));
-            if (matchingWindow == null) continue;
+            if (!representativeWindows.TryGetValue(entry.ProcessName, out IntPtr hWnd))
+                continue;
 
-            string displayName = ResolveDisplayNameFromWindow(matchingWindow.Handle, entry.ProcessName);
+            if (!_appDisplayNameCache.TryGetValue(entry.ProcessName, out string? displayName) ||
+                string.IsNullOrWhiteSpace(displayName))
+            {
+                displayName = ResolveDisplayNameFromWindow(hWnd, entry.ProcessName);
+                _appDisplayNameCache[entry.ProcessName] = displayName;
+            }
+
             if (displayName == entry.DisplayName) continue;
 
             entry.DisplayName = displayName;
@@ -745,6 +953,17 @@ public partial class MainWindow : Window
     {
         foreach (var slot in _slots)
             slot.UpdateThumbnail();
+    }
+
+    private void RequestThumbnailUpdate()
+    {
+        if (_thumbnailUpdatePending) return;
+        _thumbnailUpdatePending = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Render, () =>
+        {
+            _thumbnailUpdatePending = false;
+            UpdateAllThumbnails();
+        });
     }
 
     // Cell interaction (click / menu / drag reorder)
@@ -888,6 +1107,7 @@ public partial class MainWindow : Window
         }
 
         RebuildGrid();
+        RequestStateSave();
     }
 
     private static readonly Brush DefaultHitLayerBrush =
@@ -1085,6 +1305,7 @@ public partial class MainWindow : Window
             WindowState = WindowState.Maximized;
             _isFullScreen = true;
         }
-        Dispatcher.BeginInvoke(DispatcherPriority.Render, UpdateAllThumbnails);
+        RequestThumbnailUpdate();
+        RequestStateSave();
     }
 }
