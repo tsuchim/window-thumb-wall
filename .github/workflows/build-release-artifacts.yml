@@ -112,6 +112,11 @@ jobs:
           }
           & $makeappx pack /d publish-msix /p "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-x64.msix" /o
 
+      # ── Generate Metadata ─────────────────────────────────────
+      - name: Generate release metadata
+        run: |
+          .\packaging\generate-release-metadata.ps1 -Version "$env:VERSION" -OutputDir "$env:DIST_DIR"
+
       # ── Upload artifacts ───────────────────────────────────────
       # These unsigned artifacts will be signed via SignPath in a future step.
       - name: Upload unsigned artifacts
@@ -122,6 +127,9 @@ jobs:
             ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-x64.zip
             ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-x64.msi
             ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-x64.msix
+            ${{ env.DIST_DIR }}/release-notes.md
+            ${{ env.DIST_DIR }}/store-listing-*.md
+            ${{ env.DIST_DIR }}/store-whats-new-*.md
           if-no-files-found: error
 
   release:
@@ -143,6 +151,11 @@ jobs:
       - name: Create draft GitHub Release and upload assets
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b
         with:
+          name: WindowThumbWall ${{ env.GITHUB_REF_NAME }}
+          body_path: ${{ env.DIST_DIR }}/release-notes.md
           draft: true
-          files: ${{ env.DIST_DIR }}/*
+          files: |
+            ${{ env.DIST_DIR }}/*.zip
+            ${{ env.DIST_DIR }}/*.msi
+            ${{ env.DIST_DIR }}/*.msix
           fail_on_unmatched_files: true
