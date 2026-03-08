@@ -70,5 +70,6 @@ If you want different Japanese and English release text, you can instead create:
 ## Related Documents
 - [releasing.md](releasing.md)
 - [invariants.md](invariants.md)
+- [capture-architecture-clarification.md](capture-architecture-clarification.md)
 - [code-signing-policy.md](code-signing-policy.md)
 - [PRIVACY.md](../PRIVACY.md)
