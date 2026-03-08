@@ -15,10 +15,64 @@ $isDev = ($Version -eq 'dev')
 $releaseNotesInput = "packaging/release-notes-$plainVersion.md"
 $releaseNotesJaInput = "packaging/release-notes-ja-$plainVersion.md"
 $releaseNotesEnInput = "packaging/release-notes-en-$plainVersion.md"
+$releaseHighlightsInput = "packaging/release-highlights-$plainVersion.md"
+$releaseHighlightsJaInput = "packaging/release-highlights-ja-$plainVersion.md"
+$releaseHighlightsEnInput = "packaging/release-highlights-en-$plainVersion.md"
 
 # Ensure output directory
 if (-not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
+}
+
+function Get-HighlightsContent {
+    param(
+        [string]$PreferredPath,
+        [string]$FallbackPath,
+        [string]$DefaultContent
+    )
+
+    if ($PreferredPath -and (Test-Path $PreferredPath)) {
+        return (Get-Content $PreferredPath -Raw).Trim()
+    }
+
+    if ($FallbackPath -and (Test-Path $FallbackPath)) {
+        $rawContent = (Get-Content $FallbackPath -Raw).Trim()
+        $changesSection = [regex]::Match(
+            $rawContent,
+            '(?ms)^#{1,6}\s*Changes\s*$\s*(.*?)(?=^#{1,6}\s+\S|\z)'
+        )
+
+        if ($changesSection.Success -and -not [string]::IsNullOrWhiteSpace($changesSection.Groups[1].Value)) {
+            return $changesSection.Groups[1].Value.Trim()
+        }
+    }
+
+    return $DefaultContent.Trim()
+}
+
+function Get-PreferredOrNull {
+    param(
+        [string]$PreferredPath,
+        [string]$FallbackPath
+    )
+
+    if ($PreferredPath -and (Test-Path $PreferredPath)) {
+        return (Get-Content $PreferredPath -Raw).Trim()
+    }
+
+    if ($FallbackPath -and (Test-Path $FallbackPath)) {
+        $rawContent = (Get-Content $FallbackPath -Raw).Trim()
+        $changesSection = [regex]::Match(
+            $rawContent,
+            '(?ms)^#{1,6}\s*Changes\s*$\s*(.*?)(?=^#{1,6}\s+\S|\z)'
+        )
+
+        if ($changesSection.Success -and -not [string]::IsNullOrWhiteSpace($changesSection.Groups[1].Value)) {
+            return $changesSection.Groups[1].Value.Trim()
+        }
+    }
+
+    return $null
 }
 
 # Load highlights if available
@@ -34,42 +88,36 @@ $defaultHighlightsJa = @"
 - パッケージングとリリース文面の整備。
 "@
 
-$highlightsCommon = $null
-if (Test-Path $releaseNotesInput) {
-    $highlightsCommon = Get-Content $releaseNotesInput -Raw
-}
+$highlightsCommon = Get-PreferredOrNull `
+    -PreferredPath $releaseHighlightsInput `
+    -FallbackPath $releaseNotesInput
 
-$highlightsJa = $null
-if (Test-Path $releaseNotesJaInput) {
-    $highlightsJa = Get-Content $releaseNotesJaInput -Raw
-} elseif ($highlightsCommon) {
-    $highlightsJa = $highlightsCommon
-} else {
-    $highlightsJa = $defaultHighlightsJa
-}
+$highlightsJa = Get-HighlightsContent `
+    -PreferredPath $releaseHighlightsJaInput `
+    -FallbackPath $releaseNotesJaInput `
+    -DefaultContent $(if ($highlightsCommon) { $highlightsCommon } else { $defaultHighlightsJa })
 
-$highlightsEn = $null
-if (Test-Path $releaseNotesEnInput) {
-    $highlightsEn = Get-Content $releaseNotesEnInput -Raw
-} elseif ($highlightsCommon) {
-    $highlightsEn = $highlightsCommon
-} else {
-    $highlightsEn = $defaultHighlightsEn
-}
+$highlightsEn = Get-HighlightsContent `
+    -PreferredPath $releaseHighlightsEnInput `
+    -FallbackPath $releaseNotesEnInput `
+    -DefaultContent $(if ($highlightsCommon) { $highlightsCommon } else { $defaultHighlightsEn })
 
 $downloadVersion = if ($isDev) { 'dev' } else { $Version }
+$repository = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { 'tsuchim/WindowThumbWall' }
+$serverUrl = if ($env:GITHUB_SERVER_URL) { $env:GITHUB_SERVER_URL.TrimEnd('/') } else { 'https://github.com' }
+$repositoryUrl = "$serverUrl/$repository"
 
 # --- 1. GitHub Release Notes (dist/release-notes.md) ---
 $ghNotes = @"
-# WindowThumbWall $Version
+# Window Thumb Wall $Version
 
 Keep multiple windows visible at once with a fast, low-overhead live thumbnail wall for Windows.
 
 ## Downloads
 Official builds are available in the following formats:
-- **ZIP**: [WindowThumbWall-$downloadVersion-win-x64.zip](https://github.com/tsuchim/WindowThumbWall/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.zip)
-- **MSI**: [WindowThumbWall-$downloadVersion-win-x64.msi](https://github.com/tsuchim/WindowThumbWall/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.msi)
-- **MSIX**: [WindowThumbWall-$downloadVersion-win-x64.msix](https://github.com/tsuchim/WindowThumbWall/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.msix)
+- **ZIP**: [WindowThumbWall-$downloadVersion-win-x64.zip]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.zip)
+- **MSI**: [WindowThumbWall-$downloadVersion-win-x64.msi]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.msi)
+- **MSIX**: [WindowThumbWall-$downloadVersion-win-x64.msix]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.msix)
 
 ## Why Use It
 - Watch multiple windows without constant app switching.
@@ -83,14 +131,14 @@ Official builds are available in the following formats:
 $highlightsEn
 
 ---
-For privacy details, see [PRIVACY.md](https://github.com/tsuchim/WindowThumbWall/blob/main/PRIVACY.md).
+For privacy details, see [PRIVACY.md]($repositoryUrl/blob/main/PRIVACY.md).
 "@
 
 $ghNotes | Out-File -FilePath "$OutputDir/release-notes.md" -Encoding utf8
 
 # --- 2. Store Listing JA (dist/store-listing-ja.md) ---
 $storeJa = @"
-# WindowThumbWall - ストア掲載情報 (日本語)
+# Window Thumb Wall - ストア掲載情報 (日本語)
 
 ## 製品名
 Window Thumb Wall
@@ -136,7 +184,7 @@ $highlightsJa
 $storeJa | Out-File -FilePath "$OutputDir/store-listing-ja.md" -Encoding utf8
 
 $storeWhatsNewJa = @"
-# WindowThumbWall - ストア更新内容 (日本語)
+# Window Thumb Wall - ストア更新内容 (日本語)
 
 ## 更新内容 (What's New)
 $highlightsJa
@@ -146,7 +194,7 @@ $storeWhatsNewJa | Out-File -FilePath "$OutputDir/store-whats-new-ja.md" -Encodi
 
 # --- 3. Store Listing EN (dist/store-listing-en.md) ---
 $storeEn = @"
-# WindowThumbWall - Store Listing (English)
+# Window Thumb Wall - Store Listing (English)
 
 ## Product Name
 Window Thumb Wall
@@ -194,7 +242,7 @@ $highlightsEn
 $storeEn | Out-File -FilePath "$OutputDir/store-listing-en.md" -Encoding utf8
 
 $storeWhatsNewEn = @"
-# WindowThumbWall - Store What's New (English)
+# Window Thumb Wall - Store What's New (English)
 
 ## What's New
 $highlightsEn
