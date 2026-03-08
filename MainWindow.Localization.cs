@@ -10,7 +10,22 @@ public partial class MainWindow
         FilterLabel.Text = LocalizedText.Get("label.filter");
         AppListLabel.Text = LocalizedText.Get("label.autoApps");
         FullScreenButton.Content = LocalizedText.Get("button.fullscreen");
-        ShortcutGuideButton.Content = LocalizedText.Get("hint.summary");
+        ShortcutGuideButton.Content = BuildQuickHelpText();
+    }
+
+    private static string BuildQuickHelpText()
+    {
+        string summary = LocalizedText.Get("hint.summary");
+        string[] lines = summary
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (lines.Length <= 4)
+            return string.Join('\n', lines);
+
+        var visible = new List<string>(4);
+        visible.AddRange(lines.Take(3));
+        visible.Add(LocalizedText.Get("hint.more"));
+        return string.Join('\n', visible);
     }
 
     private void ShortcutGuideButton_Click(object sender, RoutedEventArgs e)
@@ -29,4 +44,3 @@ public partial class MainWindow
         _shortcutGuideWindow.Show();
     }
 }
-

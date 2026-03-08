@@ -158,6 +158,10 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
 
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
     // ── Structs ──────────────────────────────────────────────────
 
     [StructLayout(LayoutKind.Sequential)]
@@ -196,5 +200,18 @@ internal static class NativeMethods
         nint exStyle = (nint)GetWindowLongPtr(hWnd, GWL_EXSTYLE);
         if ((exStyle & (nint)WS_EX_TOOLWINDOW) != 0) return false;
         return !string.IsNullOrWhiteSpace(GetWindowTitle(hWnd));
+    }
+
+    internal static double GetWindowAspectRatio(IntPtr hWnd, double fallback = 16.0 / 9.0)
+    {
+        if (hWnd == IntPtr.Zero || !GetWindowRect(hWnd, out var rect))
+            return fallback;
+
+        int width = rect.Right - rect.Left;
+        int height = rect.Bottom - rect.Top;
+        if (width <= 0 || height <= 0)
+            return fallback;
+
+        return (double)width / height;
     }
 }
