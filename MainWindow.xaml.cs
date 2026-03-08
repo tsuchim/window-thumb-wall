@@ -750,11 +750,7 @@ public partial class MainWindow : Window
                     ?.idx ?? -1;
                 if (existingIndex >= 0 && _autoAddApps[existingIndex].DisplayName != displayName)
                 {
-                    _autoAddApps[existingIndex] = new AutoAddAppEntry
-                    {
-                        ProcessName = _autoAddApps[existingIndex].ProcessName,
-                        DisplayName = displayName
-                    };
+                    _autoAddApps[existingIndex].DisplayName = displayName;
                     RequestStateSave();
                 }
             }
@@ -875,15 +871,28 @@ public partial class MainWindow : Window
 
     private Dictionary<string, int> BuildAutoAddInsertIndexes()
     {
-        List<string> slotProcessNames = BuildOccupiedSlotProcessNames();
+        var hwndToProcess = _windowCache
+            .GroupBy(window => window.Handle)
+            .ToDictionary(group => group.Key, group => group.First().ProcessName);
         var nextInsertIndexByProcess = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         int lastMatchingSlotIndex = -1;
 
         foreach (var app in _autoAddApps)
         {
-            for (int i = lastMatchingSlotIndex + 1; i < slotProcessNames.Count; i++)
+            for (int i = lastMatchingSlotIndex + 1; i < _slots.Count; i++)
             {
-                if (slotProcessNames[i].Equals(app.ProcessName, StringComparison.OrdinalIgnoreCase))
+                var slot = _slots[i];
+                if (!slot.IsOccupied)
+                    continue;
+
+                string slotProcess = slot.SourceProcessName;
+                if (string.IsNullOrWhiteSpace(slotProcess) &&
+                    !hwndToProcess.TryGetValue(slot.SourceHwnd, out slotProcess))
+                {
+                    continue;
+                }
+
+                if (slotProcess.Equals(app.ProcessName, StringComparison.OrdinalIgnoreCase))
                     lastMatchingSlotIndex = i;
             }
 
@@ -891,30 +900,6 @@ public partial class MainWindow : Window
         }
 
         return nextInsertIndexByProcess;
-    }
-
-    private List<string> BuildOccupiedSlotProcessNames()
-    {
-        var hwndToProcess = _windowCache
-            .GroupBy(window => window.Handle)
-            .ToDictionary(group => group.Key, group => group.First().ProcessName);
-        var slotProcessNames = new List<string>(_slots.Count);
-
-        foreach (var slot in _slots)
-        {
-            if (!slot.IsOccupied) continue;
-
-            string slotProcess = slot.SourceProcessName;
-            if (string.IsNullOrWhiteSpace(slotProcess) &&
-                !hwndToProcess.TryGetValue(slot.SourceHwnd, out slotProcess))
-            {
-                continue;
-            }
-
-            slotProcessNames.Add(slotProcess);
-        }
-
-        return slotProcessNames;
     }
 
     private void RefreshAutoAddAppDisplayNames()
