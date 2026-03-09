@@ -26,8 +26,9 @@ publish-*/
 *.wixpdb
 cab*.cab
 
-# Solution files (using .slnx instead)
+# Solution files
 *.sln
+!WindowThumbWall.sln
 
 # Test output directories
 dist-test*/
