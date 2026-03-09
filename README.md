@@ -63,6 +63,9 @@ WindowThumbWall is officially distributed in three formats.
 
 Details: [PRIVACY.md](PRIVACY.md)
 
+## Compatibility Note
+WindowThumbWall is provided as-is. Compatibility, continuous operation, and fitness for a particular purpose are not guaranteed for every Windows environment or workflow. If you plan to rely on it for important work, verify its behavior on your own hardware and window setup first.
+
 ## Microsoft Store Copy
 The following text is written to be copied directly into a Store listing when needed.
 
@@ -98,6 +101,9 @@ Key features:
 - Local-only operation with no telemetry.
 
 Window Thumb Wall is designed for people who want persistent visibility with minimal friction: developers, analysts, operators, power users, and anyone who works across multiple live windows.
+
+Important Note:
+The app is provided as-is. Compatibility and behavior can vary depending on your Windows version, display layout, and the apps you monitor. Please verify it in your own environment before relying on it for important work.
 
 ### What's New Template
 Use the generated release metadata for the version you are publishing. The release process generates Store-ready "What's new" text for each tagged release.

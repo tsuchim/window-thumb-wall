@@ -1,0 +1,42 @@
+Product Name
+Window Thumb Wall
+
+Short Description
+Keep multiple windows visible at once with a fast, low-overhead live thumbnail wall for Windows.
+
+Full Description
+Window Thumb Wall is a Windows desktop app that arranges live thumbnails of your open windows into a clean, flexible wall layout.
+
+Instead of constantly switching between apps, you can keep the windows that matter visible on one screen while you continue working. It works well for build logs, dashboards, chats, browsers, terminals, charts, and other desktop windows that you want to monitor at the same time.
+
+The app uses the native Windows Desktop Window Manager thumbnail API, so it shows live window content with very low overhead. You can build a practical monitoring workspace without screen capture tools, streaming software, or custom overlays.
+
+Why people use Window Thumb Wall:
+- Monitor several windows without constant Alt+Tab switching.
+- Keep reference information visible while working in another app.
+- Turn a spare display into a simple monitoring wall.
+- Follow live content instead of static screenshots.
+- Notice when a window needs attention through a flashing red border.
+- Jump back to the source window with a single click on its thumbnail.
+
+Key Features
+- Live thumbnails for external windows.
+- Flexible wall layout for multiple windows.
+- Built-in window picker for quickly adding targets.
+- Click a thumbnail to activate its source window.
+- Flashing red border when the source window flashes in the taskbar.
+- Fullscreen mode for dedicated monitoring.
+- Always-on-top support.
+- Local-only operation with no telemetry.
+
+Important Note
+This app is provided as-is. Compatibility and behavior can vary depending on your Windows version, display layout, and the apps you monitor. Please verify it in your own environment before relying on it for important work.
+
+What's New
+Paste the generated release-specific "What's new" text here.
+
+Promotional Text
+Turn spare screen space into a live window wall.
+
+Search Keywords
+window monitor, thumbnail wall, desktop dashboard, live preview, multitasking, productivity, windows utility
