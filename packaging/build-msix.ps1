@@ -10,12 +10,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root     = Split-Path $PSScriptRoot -Parent
-$pubDir   = Join-Path $root "publish-msix"
+$pubDir   = Join-Path $root "publish-msix-$Runtime"
 $pkgDir   = Join-Path $root "packaging"
-$outMsix  = Join-Path $root "WindowThumbWall-v0.2-win-x64.msix"
+$outMsix  = Join-Path $root "WindowThumbWall-v0.2-$Runtime.msix"
 
 # ── 1. Publish self-contained ────────────────────────────────
-Write-Host ">> Publishing..." -ForegroundColor Cyan
+Write-Host ">> Publishing for $Runtime..." -ForegroundColor Cyan
 dotnet publish "$root\WindowThumbWall.csproj" `
     -c $Configuration -r $Runtime --self-contained `
     -p:PublishSingleFile=false `
@@ -25,6 +25,11 @@ dotnet publish "$root\WindowThumbWall.csproj" `
 Write-Host ">> Preparing package layout..." -ForegroundColor Cyan
 Copy-Item "$pkgDir\AppxManifest.xml" $pubDir -Force
 Copy-Item "$pkgDir\Assets" "$pubDir\Assets" -Recurse -Force
+
+$processorArchitecture = if ($Runtime -like "*arm64*") { "arm64" } else { "x64" }
+[xml]$manifest = Get-Content (Join-Path $pubDir "AppxManifest.xml")
+$manifest.Package.Identity.ProcessorArchitecture = $processorArchitecture
+$manifest.Save((Resolve-Path (Join-Path $pubDir "AppxManifest.xml")))
 
 # ── 3. Find Windows SDK tools ────────────────────────────────
 $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" -ErrorAction SilentlyContinue |

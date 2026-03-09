@@ -10,9 +10,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root    = Split-Path $PSScriptRoot -Parent
-$pubDir  = Join-Path $root "publish-msi"
+$pubDir  = Join-Path $root "publish-msi-$Runtime"
 $pkgDir  = Join-Path $root "packaging"
-$outMsi  = Join-Path $root "WindowThumbWall-v0.2-win-x64.msi"
+$outMsi  = Join-Path $root "WindowThumbWall-v0.2-$Runtime.msi"
 
 # ── 1. Ensure WiX v5 CLI is available ────────────────────────
 Write-Host ">> Checking WiX toolset..." -ForegroundColor Cyan
@@ -37,10 +37,11 @@ dotnet publish "$root\WindowThumbWall.csproj" `
     -o $pubDir
 
 # ── 3. Build MSI ─────────────────────────────────────────────
-Write-Host ">> Building MSI..." -ForegroundColor Cyan
+Write-Host ">> Building MSI for $Runtime..." -ForegroundColor Cyan
 if (Test-Path $outMsi) { Remove-Item $outMsi -Force }
+$wixArch = if ($Runtime -like "*arm64*") { "arm64" } else { "x64" }
 wix build "$pkgDir\WindowThumbWall.wxs" `
-    -arch x64 `
+    -arch $wixArch `
     -ext WixToolset.UI.wixext `
     -d PublishDir="$pubDir" `
     -o $outMsi
