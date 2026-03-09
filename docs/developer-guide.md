@@ -5,7 +5,7 @@ This document covers local development, packaging, and release-related reference
 ## Environment Requirements
 - Windows 10 or 11
 - .NET 10 SDK as pinned in [global.json](../global.json)
-- Visual Studio 2026 or later for the easiest local debugging experience
+- Visual Studio 2022 or later for the easiest local debugging experience
 - WiX Toolset v5 for MSI packaging
 
 ## Project Layout
@@ -21,7 +21,7 @@ This document covers local development, packaging, and release-related reference
 ## Run Locally
 
 ### Visual Studio
-1. Open [WindowThumbWall.slnx](../WindowThumbWall.slnx).
+1. Open [WindowThumbWall.sln](../WindowThumbWall.sln).
 2. Set WindowThumbWall as the startup project.
 3. Press F5 to debug or Ctrl+F5 to run.
 
