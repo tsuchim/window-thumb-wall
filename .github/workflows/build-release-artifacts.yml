@@ -48,22 +48,6 @@ jobs:
       - name: Restore
         run: dotnet restore WindowThumbWall.csproj
 
-      # ── Publish (self-contained, win-x64) ──────────────────────
-      - name: Publish
-        run: |
-          dotnet publish WindowThumbWall.csproj `
-            -c Release -r win-x64 --self-contained `
-            -p:PublishSingleFile=false `
-            -o publish
-
-      # ── ZIP artifact ───────────────────────────────────────────
-      - name: Remove PDB files
-        run: Get-ChildItem publish -Filter *.pdb -Recurse | Remove-Item -Force
-
-      - name: Create ZIP
-        run: Compress-Archive -Path "publish\*" -DestinationPath "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-x64.zip" -CompressionLevel Optimal
-
-      # ── MSI artifact (WiX v5) ─────────────────────────────────
       - name: Install WiX
         run: |
           dotnet tool install --global wix --version 5.0.2
@@ -74,62 +58,69 @@ jobs:
           $wixVer = (wix --version) -replace '\+.*',''
           wix extension add -g "WixToolset.UI.wixext/$wixVer"
 
-      - name: Publish for MSI
+      - name: Build architectures
         run: |
-          dotnet publish WindowThumbWall.csproj `
-            -c Release -r win-x64 --self-contained `
-            -p:PublishSingleFile=false `
-            -o publish-msi
+          $architectures = @("x64", "arm64")
+          foreach ($arch in $architectures) {
+            $runtime = "win-$arch"
+            Write-Host ">> Building for $runtime..." -ForegroundColor Cyan
 
-      - name: Build MSI
-        run: |
-          wix build packaging\WindowThumbWall.wxs `
-            -arch x64 `
-            -ext WixToolset.UI.wixext `
-            -d PublishDir="publish-msi" `
-            -o "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-x64.msi"
+            # ── Publish ──────────────────────────────────────────────
+            dotnet publish WindowThumbWall.csproj `
+              -c Release -r $runtime --self-contained `
+              -p:PublishSingleFile=false `
+              -o "publish-$arch"
 
-      # ── MSIX artifact ─────────────────────────────────────────
-      - name: Publish for MSIX
-        run: |
-          dotnet publish WindowThumbWall.csproj `
-            -c Release -r win-x64 --self-contained `
-            -p:PublishSingleFile=false `
-            -o publish-msix
+            # ── ZIP artifact ─────────────────────────────────────────
+            Get-ChildItem "publish-$arch" -Filter *.pdb -Recurse | Remove-Item -Force
+            Compress-Archive -Path "publish-$arch\*" -DestinationPath "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-$arch.zip" -CompressionLevel Optimal
 
-      - name: Prepare MSIX layout
-        run: |
-          Copy-Item packaging\AppxManifest.xml publish-msix -Force
-          Copy-Item packaging\Assets publish-msix\Assets -Recurse -Force
+            # ── MSI artifact (WiX v5) ────────────────────────────────
+            # We need to publish again for MSI because it might need different settings or just a clean dir
+            dotnet publish WindowThumbWall.csproj `
+              -c Release -r $runtime --self-contained `
+              -p:PublishSingleFile=false `
+              -o "publish-msi-$arch"
 
-      - name: Patch MSIX manifest version
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          $plainVersion = $env:VERSION -replace '^v', ''
-          if ($plainVersion -notmatch '^\d+\.\d+\.\d+$') {
-            Write-Error "VERSION $($env:VERSION) does not match vX.Y.Z"
-            exit 1
+            wix build packaging\WindowThumbWall.wxs `
+              -arch $arch `
+              -ext WixToolset.UI.wixext `
+              -d PublishDir="publish-msi-$arch" `
+              -o "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-$arch.msi"
+
+            # ── MSIX artifact ───────────────────────────────────────
+            dotnet publish WindowThumbWall.csproj `
+              -c Release -r $runtime --self-contained `
+              -p:PublishSingleFile=false `
+              -o "publish-msix-$arch"
+
+            Copy-Item packaging\AppxManifest.xml "publish-msix-$arch" -Force
+            Copy-Item packaging\Assets "publish-msix-$arch\Assets" -Recurse -Force
+
+            # Patch MSIX manifest version and architecture
+            $plainVersion = $env:VERSION -replace '^v', ''
+            $manifestPath = "publish-msix-$arch\AppxManifest.xml"
+            [xml]$xml = Get-Content $manifestPath
+
+            if ($plainVersion -match '^\d+\.\d+\.\d+$') {
+              $versionParts = $plainVersion.Split('.')
+              $packageVersion = "$($versionParts[0]).$($versionParts[1]).$($versionParts[2]).0"
+              $xml.Package.Identity.Version = $packageVersion
+              Write-Host "Patched MSIX manifest version to $packageVersion"
+            }
+
+            $xml.Package.Identity.ProcessorArchitecture = $arch
+            $xml.Save((Resolve-Path $manifestPath))
+            Write-Host "Patched MSIX manifest architecture to $arch"
+
+            $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" -ErrorAction SilentlyContinue |
+                        Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+            if (-not $makeappx) {
+              Write-Error "makeappx.exe not found. Ensure Windows SDK is installed."
+              exit 1
+            }
+            & $makeappx pack /d "publish-msix-$arch" /p "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-$arch.msix" /o
           }
-
-          $versionParts = $plainVersion.Split('.')
-          $packageVersion = "$($versionParts[0]).$($versionParts[1]).$($versionParts[2]).0"
-          $manifestPath = 'publish-msix\AppxManifest.xml'
-
-          [xml]$xml = Get-Content $manifestPath
-          $xml.Package.Identity.Version = $packageVersion
-          $xml.Save((Resolve-Path $manifestPath))
-
-          Write-Host "Patched MSIX manifest version to $packageVersion"
-
-      - name: Create MSIX
-        run: |
-          $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" -ErrorAction SilentlyContinue |
-                      Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $makeappx) {
-            Write-Error "makeappx.exe not found. Ensure Windows SDK is installed."
-            exit 1
-          }
-          & $makeappx pack /d publish-msix /p "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-x64.msix" /o
 
       # ── Generate Metadata ─────────────────────────────────────
       - name: Generate release metadata
@@ -143,9 +134,9 @@ jobs:
         with:
           name: unsigned-artifacts
           path: |
-            ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-x64.zip
-            ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-x64.msi
-            ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-x64.msix
+            ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-*.zip
+            ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-*.msi
+            ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-*.msix
             ${{ env.DIST_DIR }}/release-notes.md
             ${{ env.DIST_DIR }}/store-listing-*.md
             ${{ env.DIST_DIR }}/store-whats-new-*.md

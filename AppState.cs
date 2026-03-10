@@ -5,6 +5,8 @@ namespace WindowThumbWall;
 
 internal sealed class AppState
 {
+    internal const string StatePathOverrideEnvironmentVariable = "WINDOWTHUMBWALL_STATE_PATH";
+
     public List<SlotState> Slots { get; set; } = [];
     public List<string> AutoAddApps { get; set; } = [];
     public WindowGeometry? Geometry { get; set; }
@@ -12,16 +14,13 @@ internal sealed class AppState
     public double LeftPanelWidth { get; set; }
     public double AppListHeight { get; set; }
 
-    private static readonly string StatePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "WindowThumbWall", "state.json");
-
     internal static AppState Load()
     {
+        string statePath = GetStatePath();
         try
         {
-            if (!File.Exists(StatePath)) return new AppState();
-            var json = File.ReadAllText(StatePath);
+            if (!File.Exists(statePath)) return new AppState();
+            var json = File.ReadAllText(statePath);
             return JsonSerializer.Deserialize<AppState>(json) ?? new AppState();
         }
         catch
@@ -32,16 +31,28 @@ internal sealed class AppState
 
     internal void Save()
     {
+        string statePath = GetStatePath();
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(StatePath)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(statePath)!);
             var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(StatePath, json);
+            File.WriteAllText(statePath, json);
         }
         catch
         {
             // Silently ignore save errors.
         }
+    }
+
+    internal static string GetStatePath()
+    {
+        string? overridePath = Environment.GetEnvironmentVariable(StatePathOverrideEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(overridePath))
+            return overridePath;
+
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "WindowThumbWall", "state.json");
     }
 }
 

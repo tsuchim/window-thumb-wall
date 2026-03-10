@@ -43,11 +43,18 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool IsWindowVisible(IntPtr hWnd);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    internal static extern int GetClassName(IntPtr hWnd, char[] lpClassName, int nMaxCount);
+
     [DllImport("user32.dll")]
     internal static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
 
+    [DllImport("user32.dll")]
+    internal static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+
     internal const int GWL_EXSTYLE          = -20;
     internal const uint WS_EX_TOOLWINDOW    = 0x00000080;
+    internal const uint GW_OWNER            = 4;
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -194,12 +201,33 @@ internal static class NativeMethods
         return new string(buf, 0, len);
     }
 
+    internal static string GetWindowClassName(IntPtr hWnd)
+    {
+        var buf = new char[256];
+        int len = GetClassName(hWnd, buf, buf.Length);
+        return len <= 0 ? string.Empty : new string(buf, 0, len);
+    }
+
     internal static bool IsAltTabWindow(IntPtr hWnd)
     {
-        if (!IsWindowVisible(hWnd)) return false;
-        nint exStyle = (nint)GetWindowLongPtr(hWnd, GWL_EXSTYLE);
-        if ((exStyle & (nint)WS_EX_TOOLWINDOW) != 0) return false;
-        return !string.IsNullOrWhiteSpace(GetWindowTitle(hWnd));
+        WindowCandidateData window = new(
+            IsVisible: IsWindowVisible(hWnd),
+            ExStyle: (nint)GetWindowLongPtr(hWnd, GWL_EXSTYLE),
+            HasOwner: GetWindow(hWnd, GW_OWNER) != IntPtr.Zero,
+            ClassName: GetWindowClassName(hWnd),
+            Title: GetWindowTitle(hWnd));
+        return WindowEnumerationPolicy.ShouldInclude(window);
+    }
+
+    internal static bool IsLikelyOwnedStandardDialog(IntPtr hWnd)
+    {
+        WindowCandidateData window = new(
+            IsVisible: IsWindowVisible(hWnd),
+            ExStyle: (nint)GetWindowLongPtr(hWnd, GWL_EXSTYLE),
+            HasOwner: GetWindow(hWnd, GW_OWNER) != IntPtr.Zero,
+            ClassName: GetWindowClassName(hWnd),
+            Title: GetWindowTitle(hWnd));
+        return WindowEnumerationPolicy.IsLikelyOwnedStandardDialog(window);
     }
 
     internal static double GetWindowAspectRatio(IntPtr hWnd, double fallback = 16.0 / 9.0)

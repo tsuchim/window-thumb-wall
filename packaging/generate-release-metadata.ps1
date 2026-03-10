@@ -123,9 +123,16 @@ Download links are omitted for dev builds. Use the workflow artifacts from the c
     @"
 ## Downloads
 Official builds are available in the following formats:
+
+### Windows x64 (Standard)
 - **ZIP**: [WindowThumbWall-$downloadVersion-win-x64.zip]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.zip)
 - **MSI**: [WindowThumbWall-$downloadVersion-win-x64.msi]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.msi)
 - **MSIX**: [WindowThumbWall-$downloadVersion-win-x64.msix]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.msix)
+
+### Windows ARM64 (Surface Pro, etc.)
+- **ZIP**: [WindowThumbWall-$downloadVersion-win-arm64.zip]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-arm64.zip)
+- **MSI**: [WindowThumbWall-$downloadVersion-win-arm64.msi]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-arm64.msi)
+- **MSIX**: [WindowThumbWall-$downloadVersion-win-arm64.msix]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-arm64.msix)
 "@
 }
 

@@ -9,11 +9,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root    = Split-Path $PSScriptRoot -Parent
-$pubDir  = Join-Path $root "publish-zip"
-$outZip  = Join-Path $root "WindowThumbWall-v0.2-win-x64.zip"
+$pubDir  = Join-Path $root "publish-zip-$Runtime"
+$outZip  = Join-Path $root "WindowThumbWall-v0.2-$Runtime.zip"
 
 # ── 1. Publish self-contained ────────────────────────────────
-Write-Host ">> Publishing..." -ForegroundColor Cyan
+Write-Host ">> Publishing for $Runtime..." -ForegroundColor Cyan
 dotnet publish "$root\WindowThumbWall.csproj" `
     -c $Configuration -r $Runtime --self-contained `
     -p:PublishSingleFile=false `
