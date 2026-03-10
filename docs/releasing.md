@@ -41,6 +41,34 @@ git tag -s v0.2.3 -m "Release v0.2.3"
 git push origin v0.2.3
 ```
 
+## Version Alignment Map
+Treat the Git tag `vX.Y.Z` as the release source of truth. Use the table below to decide which places must be updated manually and which places are derived automatically.
+
+| Target | Format | How it is kept in sync | Notes |
+| --- | --- | --- | --- |
+| Git tag | `vX.Y.Z` | Manual | Release trigger. Both release workflows start from this tag format. |
+| [WindowThumbWall.csproj](../WindowThumbWall.csproj) | `X.Y.Z` and `X.Y.Z.0` | Manual | Update `Version`, `AssemblyVersion`, and `FileVersion` together. |
+| [packaging/AppxManifest.xml](../packaging/AppxManifest.xml) | `X.Y.Z.0` | Manual in source, automatic in release output | The build workflow patches the copied manifest inside the release package from the tag, but the source manifest should still be kept current for local packaging clarity. |
+| [packaging/Package.appxmanifest](../packaging/Package.appxmanifest) | `X.Y.Z.0` | Manual in source, automatic in Store workflow | The Store workflow rewrites the manifest before building the Store package, but the checked-in file should still track the current release version. |
+| Release notes input files | `packaging/release-notes-<version>.md` and localized variants | Manual | Create the files for the exact plain version such as `0.6.2`, without the `v` prefix. |
+| Release highlights input files | `packaging/release-highlights-<version>.md` and localized variants | Manual | Optional, but if used they must match the same plain version as the tag. |
+| Generated artifact filenames | `WindowThumbWall-vX.Y.Z-win-*.zip/msi/msix` | Automatic from tag | Produced by the build workflow. |
+| Generated GitHub Release body | `dist/release-notes.md` | Automatic from tag and metadata inputs | Produced by [packaging/generate-release-metadata.ps1](../packaging/generate-release-metadata.ps1). |
+| Generated Store metadata | `dist/store-listing-*.md`, `dist/store-whats-new-*.md` | Automatic from tag and metadata inputs | Produced by the metadata generator. |
+| Store package version | `X.Y.Z.0` | Automatic from tag | Both release workflows normalize `vX.Y.Z` to a four-part Store/MSIX version. |
+| GitHub Release title | `X.Y.Z` | Manual today | The draft release is currently created with `WindowThumbWall vX.Y.Z`, so rename it to the plain version before publishing if you want the numeric-only convention. |
+
+### Minimum Manual Update Set
+Before creating `vX.Y.Z`, make sure these version-bearing sources have been reviewed together:
+
+1. [WindowThumbWall.csproj](../WindowThumbWall.csproj)
+2. [packaging/AppxManifest.xml](../packaging/AppxManifest.xml)
+3. [packaging/Package.appxmanifest](../packaging/Package.appxmanifest)
+4. `packaging/release-notes-<version>.md` or localized equivalents when the release has user-visible changes
+5. `packaging/release-highlights-<version>.md` or localized equivalents if you use highlights files
+
+After the draft GitHub Release is created, also verify that the release title follows the chosen convention.
+
 ## What The Build Workflow Generates
 The [build-release-artifacts workflow](../.github/workflows/build-release-artifacts.yml) runs [packaging/generate-release-metadata.ps1](../packaging/generate-release-metadata.ps1) on each tagged release.
 
@@ -108,12 +136,15 @@ GitHub variable:
 The Azure AD app registration must already be authorized in Partner Center for the seller account.
 
 ## Recommended Release Checklist
-1. Add `packaging/release-notes-<version>.md` or the localized `release-notes-ja/en-<version>.md` files if the release has user-visible changes.
-2. Create and push `vX.Y.Z`.
-3. Review the generated GitHub draft release body.
-4. Publish the GitHub Release after checking attached ZIP, MSI, and MSIX artifacts.
-5. Confirm that the Store workflow created and committed the submission; if later status details are needed, verify them in Partner Center.
-6. If you are updating the Microsoft Store listing text, copy from the generated Store metadata files.
+1. Update [WindowThumbWall.csproj](../WindowThumbWall.csproj) `Version`, `AssemblyVersion`, and `FileVersion`.
+2. Update [packaging/AppxManifest.xml](../packaging/AppxManifest.xml) and [packaging/Package.appxmanifest](../packaging/Package.appxmanifest) to the same four-part version.
+3. Add `packaging/release-notes-<version>.md` or the localized `release-notes-ja/en-<version>.md` files if the release has user-visible changes.
+4. Add `packaging/release-highlights-<version>.md` or localized variants if you want explicit highlights instead of fallback content.
+5. Create and push `vX.Y.Z`.
+6. Review the generated GitHub draft release body and rename the release title if you want the plain `X.Y.Z` convention.
+7. Publish the GitHub Release after checking attached ZIP, MSI, and MSIX artifacts.
+8. Confirm that the Store workflow created and committed the submission; if later status details are needed, verify them in Partner Center.
+9. If you are updating the Microsoft Store listing text, copy from the generated Store metadata files.
 
 ## Local Test Command
 You can generate the metadata locally before tagging.
