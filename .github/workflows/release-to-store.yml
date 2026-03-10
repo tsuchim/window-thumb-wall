@@ -154,6 +154,7 @@ jobs:
           version: v0.3.9
 
       - name: MSStore Publish
+        id: msstore_publish
         shell: pwsh
         run: |
           $packageDir = Join-Path $PWD 'packaging\AppPackages'
@@ -181,9 +182,44 @@ jobs:
             --clientId "${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}" `
             --clientSecret "${{ secrets.AZURE_AD_APPLICATION_SECRET }}"
 
-          msstore publish "$($package.FullName)" -id "${{ steps.prereq.outputs.store_product_id }}" -v
+          $publishLog = Join-Path $env:RUNNER_TEMP 'msstore-publish.log'
+          & msstore publish "$($package.FullName)" -id "${{ steps.prereq.outputs.store_product_id }}" -v 2>&1 |
+            Tee-Object -FilePath $publishLog
+          $publishExitCode = $LASTEXITCODE
+
+          $publishText = Get-Content $publishLog -Raw
+          $submissionIdMatch = [regex]::Match($publishText, '/submissions/(\d+)/status')
+          $submissionId = ''
+          if ($submissionIdMatch.Success) {
+            $submissionId = $submissionIdMatch.Groups[1].Value
+            "submission_id=$submissionId" >> $env:GITHUB_OUTPUT
+          }
+
+          $submissionStarted = $publishText -match 'Submission Status - CommitStarted'
+          if ($submissionStarted) {
+            "submission_started=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "submission_started=false" >> $env:GITHUB_OUTPUT
+          }
+
+          if ($publishExitCode -eq 0) {
+            return
+          }
+
+          $statusPollingFailed = $publishText -match 'GetSubmissionStatusAsync' -and $publishText -match '"code":"InternalServerError"'
+          if ($submissionStarted -and $submissionId -and $statusPollingFailed) {
+            Write-Warning "MS Store submission $submissionId was created and reached CommitStarted, but status polling failed due to a transient Ingestion API InternalServerError. Treating publish as successful."
+            return
+          }
+
+          throw "msstore publish failed before submission could be confirmed. See msstore-publish.log for details."
 
       - name: MSStore Status
+        if: always() && steps.msstore_publish.outputs.submission_started == 'true'
         shell: pwsh
         run: |
-          msstore submission status "${{ steps.prereq.outputs.store_product_id }}"
+          & msstore submission status "${{ steps.prereq.outputs.store_product_id }}" 2>&1
+          $statusExitCode = $LASTEXITCODE
+          if ($statusExitCode -ne 0) {
+            Write-Warning "msstore submission status returned exit code $statusExitCode after submission creation. Leaving workflow successful."
+          }
