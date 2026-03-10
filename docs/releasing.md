@@ -71,12 +71,29 @@ Behavior:
 1. The workflow validates the tag format.
 2. The three-part tag version is normalized to a four-part Store manifest version.
 3. The Windows Application Packaging Project is built as a Store upload package.
-4. The `.msixupload` package is submitted through the Microsoft Store CLI.
+4. The `.msixupload` package is uploaded through the Microsoft Store CLI as a draft submission.
+5. The workflow commits that draft submission as a separate step.
 
 Example:
 - `v0.4.2` becomes `0.4.2.0` inside the Store packaging workflow.
 
 Four-component tags are not accepted for Store submissions.
+
+### Store Workflow Success Criteria
+The Store workflow is intentionally limited to operations that directly control submission:
+
+- create the Store upload package
+- create or update the draft submission
+- commit the draft submission
+
+Submission status polling is not part of the workflow success criteria.
+
+Reasoning:
+- The Microsoft Store ingestion APIs can return transient errors while status polling even after submission commit has already started.
+- A release workflow should fail when submission creation or submission commit fails.
+- A release workflow should not fail solely because post-submit status observation is temporarily unavailable.
+
+If you need to confirm the later Partner Center state, verify it separately in Partner Center or with a follow-up manual check.
 
 ## Store Workflow Prerequisites
 GitHub secrets:
@@ -95,7 +112,8 @@ The Azure AD app registration must already be authorized in Partner Center for t
 2. Create and push `vX.Y.Z`.
 3. Review the generated GitHub draft release body.
 4. Publish the GitHub Release after checking attached ZIP, MSI, and MSIX artifacts.
-5. If you are updating the Microsoft Store listing text, copy from the generated Store metadata files.
+5. Confirm that the Store workflow created and committed the submission; if later status details are needed, verify them in Partner Center.
+6. If you are updating the Microsoft Store listing text, copy from the generated Store metadata files.
 
 ## Local Test Command
 You can generate the metadata locally before tagging.
