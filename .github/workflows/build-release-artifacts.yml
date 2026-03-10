@@ -99,17 +99,19 @@ jobs:
 
             # Patch MSIX manifest version and architecture
             $plainVersion = $env:VERSION -replace '^v', ''
+            $manifestPath = "publish-msix-$arch\AppxManifest.xml"
+            [xml]$xml = Get-Content $manifestPath
+
             if ($plainVersion -match '^\d+\.\d+\.\d+$') {
               $versionParts = $plainVersion.Split('.')
               $packageVersion = "$($versionParts[0]).$($versionParts[1]).$($versionParts[2]).0"
-              $manifestPath = "publish-msix-$arch\AppxManifest.xml"
-
-              [xml]$xml = Get-Content $manifestPath
               $xml.Package.Identity.Version = $packageVersion
-              $xml.Package.Identity.ProcessorArchitecture = $arch
-              $xml.Save((Resolve-Path $manifestPath))
-              Write-Host "Patched MSIX manifest version to $packageVersion and architecture to $arch"
+              Write-Host "Patched MSIX manifest version to $packageVersion"
             }
+
+            $xml.Package.Identity.ProcessorArchitecture = $arch
+            $xml.Save((Resolve-Path $manifestPath))
+            Write-Host "Patched MSIX manifest architecture to $arch"
 
             $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" -ErrorAction SilentlyContinue |
                         Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
