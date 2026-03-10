@@ -210,19 +210,24 @@ internal static class NativeMethods
 
     internal static bool IsAltTabWindow(IntPtr hWnd)
     {
-        if (!IsWindowVisible(hWnd)) return false;
-        nint exStyle = (nint)GetWindowLongPtr(hWnd, GWL_EXSTYLE);
-        if ((exStyle & (nint)WS_EX_TOOLWINDOW) != 0) return false;
-        if (IsLikelyOwnedStandardDialog(hWnd)) return false;
-        return !string.IsNullOrWhiteSpace(GetWindowTitle(hWnd));
+        WindowCandidateData window = new(
+            IsVisible: IsWindowVisible(hWnd),
+            ExStyle: (nint)GetWindowLongPtr(hWnd, GWL_EXSTYLE),
+            HasOwner: GetWindow(hWnd, GW_OWNER) != IntPtr.Zero,
+            ClassName: GetWindowClassName(hWnd),
+            Title: GetWindowTitle(hWnd));
+        return WindowEnumerationPolicy.ShouldInclude(window);
     }
 
     internal static bool IsLikelyOwnedStandardDialog(IntPtr hWnd)
     {
-        if (GetWindow(hWnd, GW_OWNER) == IntPtr.Zero)
-            return false;
-
-        return string.Equals(GetWindowClassName(hWnd), "#32770", StringComparison.Ordinal);
+        WindowCandidateData window = new(
+            IsVisible: IsWindowVisible(hWnd),
+            ExStyle: (nint)GetWindowLongPtr(hWnd, GWL_EXSTYLE),
+            HasOwner: GetWindow(hWnd, GW_OWNER) != IntPtr.Zero,
+            ClassName: GetWindowClassName(hWnd),
+            Title: GetWindowTitle(hWnd));
+        return WindowEnumerationPolicy.IsLikelyOwnedStandardDialog(window);
     }
 
     internal static double GetWindowAspectRatio(IntPtr hWnd, double fallback = 16.0 / 9.0)

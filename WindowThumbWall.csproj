@@ -16,4 +16,10 @@
     <None Include=".github\copilot-instructions.md" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="WindowThumbWall.Tests\**\*.cs" />
+    <EmbeddedResource Remove="WindowThumbWall.Tests\**\*" />
+    <None Remove="WindowThumbWall.Tests\**\*" />
+  </ItemGroup>
+
 </Project>

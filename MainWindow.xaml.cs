@@ -911,14 +911,14 @@ public partial class MainWindow : Window
                 if (!slot.IsOccupied)
                     continue;
 
-                string slotProcess = slot.SourceProcessName;
+                string? slotProcess = slot.SourceProcessName;
                 if (string.IsNullOrWhiteSpace(slotProcess) &&
                     !hwndToProcess.TryGetValue(slot.SourceHwnd, out slotProcess))
                 {
                     continue;
                 }
 
-                if (slotProcess.Equals(app.ProcessName, StringComparison.OrdinalIgnoreCase))
+                if (slotProcess!.Equals(app.ProcessName, StringComparison.OrdinalIgnoreCase))
                     lastMatchingSlotIndex = i;
             }
 
