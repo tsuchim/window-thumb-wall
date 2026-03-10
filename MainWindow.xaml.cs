@@ -41,6 +41,7 @@ public partial class MainWindow : Window
 
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(1000) };
     private readonly DispatcherTimer _stateSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
+    private readonly DispatcherTimer _thumbnailSettleTimer = new() { Interval = TimeSpan.FromMilliseconds(120) };
     private readonly DispatcherTimer _thumbnailThrottleTimer = new();
     private readonly List<WindowInfo> _windowCache = [];
     private readonly ObservableCollection<AutoAddAppEntry> _autoAddApps = [];
@@ -86,6 +87,7 @@ public partial class MainWindow : Window
 
         _timer.Tick += Timer_Tick;
         _stateSaveTimer.Tick += StateSaveTimer_Tick;
+        _thumbnailSettleTimer.Tick += ThumbnailSettleTimer_Tick;
         _thumbnailThrottleTimer.Tick += ThumbnailThrottleTimer_Tick;
         Loaded += OnLoaded;
         Closed += OnClosed;
@@ -93,6 +95,7 @@ public partial class MainWindow : Window
         SizeChanged += OnSizeChanged;
         LeftPanel.SizeChanged += OnPanelSizeChanged;
         AppList.SizeChanged += OnPanelSizeChanged;
+        ThumbGrid.SizeChanged += OnThumbGridSizeChanged;
         WindowList.MouseDoubleClick += WindowList_DoubleClick;
         WindowList.PreviewMouseRightButtonDown += WindowList_RightClick;
         AppList.PreviewMouseRightButtonDown += AppList_RightClick;
@@ -126,6 +129,7 @@ public partial class MainWindow : Window
     {
         _timer.Stop();
         _stateSaveTimer.Stop();
+        _thumbnailSettleTimer.Stop();
         _thumbnailThrottleTimer.Stop();
         _stateTrackingEnabled = false;
         NativeMethods.DeregisterShellHookWindow(_mainHwnd);
@@ -148,6 +152,15 @@ public partial class MainWindow : Window
             RequestStateSave();
             RequestGridRebuild();
         }
+    }
+
+    private void OnThumbGridSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!e.WidthChanged && !e.HeightChanged)
+            return;
+
+        RequestGridRebuild();
+        ScheduleThumbnailSettle();
     }
 
     // State persistence
@@ -411,6 +424,7 @@ public partial class MainWindow : Window
         hitLayer.DragOver += Cell_DragOver;
         hitLayer.Drop += Cell_Drop;
         hitLayer.DragLeave += Cell_DragLeave;
+        hitLayer.SizeChanged += CellLayout_SizeChanged;
 
         var cellRoot = new Grid();
         cellRoot.Children.Add(panel);
@@ -426,6 +440,8 @@ public partial class MainWindow : Window
             Tag = idx,
             Cursor = Cursors.Arrow
         };
+        border.SizeChanged += CellLayout_SizeChanged;
+        host.SizeChanged += CellLayout_SizeChanged;
         ThumbGrid.Children.Add(border);
         _cellBorders.Add(border);
         _cellLabels.Add(label);
@@ -445,6 +461,9 @@ public partial class MainWindow : Window
     {
         _flashingWindows.Remove(_slots[idx].SourceHwnd);
         _slots[idx].Clear();
+        _cellBorders[idx].SizeChanged -= CellLayout_SizeChanged;
+        _cellHitLayers[idx].SizeChanged -= CellLayout_SizeChanged;
+        _cellHosts[idx].SizeChanged -= CellLayout_SizeChanged;
         ThumbGrid.Children.Remove(_cellBorders[idx]);
         _cellHosts[idx].Dispose();
 
@@ -507,6 +526,7 @@ public partial class MainWindow : Window
         }
 
         RequestThumbnailUpdate();
+        ScheduleThumbnailSettle();
     }
 
     private void RequestGridRebuild()
@@ -1007,6 +1027,18 @@ public partial class MainWindow : Window
         _thumbnailThrottleTimer.Start();
     }
 
+    private void ScheduleThumbnailSettle()
+    {
+        _thumbnailSettleTimer.Stop();
+        _thumbnailSettleTimer.Start();
+    }
+
+    private void ThumbnailSettleTimer_Tick(object? sender, EventArgs e)
+    {
+        _thumbnailSettleTimer.Stop();
+        RequestThumbnailUpdate();
+    }
+
     private void ThumbnailThrottleTimer_Tick(object? sender, EventArgs e)
     {
         _thumbnailThrottleTimer.Stop();
@@ -1015,6 +1047,14 @@ public partial class MainWindow : Window
 
         _thumbnailUpdateRequestedWhilePending = false;
         RequestThumbnailUpdate();
+    }
+
+    private void CellLayout_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!e.WidthChanged && !e.HeightChanged)
+            return;
+
+        ScheduleThumbnailSettle();
     }
 
     // Cell interaction (click / menu / drag reorder)
@@ -1357,6 +1397,7 @@ public partial class MainWindow : Window
             _isFullScreen = true;
         }
         RequestThumbnailUpdate();
+        ScheduleThumbnailSettle();
         RequestStateSave();
     }
 }
