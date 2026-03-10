@@ -18,6 +18,9 @@ temp/
 .DS_Store
 Thumbs.db
 
+# Dev container
+Dockerfile
+
 # Publish / packaging outputs
 publish-*/
 *.msix
