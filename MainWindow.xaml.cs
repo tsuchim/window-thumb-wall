@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 
 namespace WindowThumbWall;
 
@@ -15,6 +16,7 @@ public partial class MainWindow : Window
     private const string SlotDragFormat = "WindowThumbWall.SlotIndex";
     private const double DeadspaceWeight = 1.0;
     private const double DistortionWeight = 0.9;
+    private static readonly TimeSpan ThumbnailUpdateMinInterval = TimeSpan.FromMilliseconds(50);
 
     private IntPtr _mainHwnd;
 
@@ -39,6 +41,7 @@ public partial class MainWindow : Window
 
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(1000) };
     private readonly DispatcherTimer _stateSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
+    private readonly DispatcherTimer _thumbnailThrottleTimer = new();
     private readonly List<WindowInfo> _windowCache = [];
     private readonly ObservableCollection<AutoAddAppEntry> _autoAddApps = [];
     private readonly HashSet<string> _autoAddAppSet = new(StringComparer.OrdinalIgnoreCase);
@@ -57,9 +60,11 @@ public partial class MainWindow : Window
     private bool _stateTrackingEnabled;
     private bool _gridRebuildPending;
     private bool _thumbnailUpdatePending;
+    private bool _thumbnailUpdateRequestedWhilePending;
     private int _lastGridItemCount = -1;
     private int _lastGridRows = -1;
     private int _lastGridCols = -1;
+    private long _lastThumbnailUpdateTicks;
 
     public MainWindow()
     {
@@ -81,6 +86,7 @@ public partial class MainWindow : Window
 
         _timer.Tick += Timer_Tick;
         _stateSaveTimer.Tick += StateSaveTimer_Tick;
+        _thumbnailThrottleTimer.Tick += ThumbnailThrottleTimer_Tick;
         Loaded += OnLoaded;
         Closed += OnClosed;
         LocationChanged += OnLocationChanged;
@@ -120,6 +126,7 @@ public partial class MainWindow : Window
     {
         _timer.Stop();
         _stateSaveTimer.Stop();
+        _thumbnailThrottleTimer.Stop();
         _stateTrackingEnabled = false;
         NativeMethods.DeregisterShellHookWindow(_mainHwnd);
         SaveState();
@@ -419,7 +426,6 @@ public partial class MainWindow : Window
             Tag = idx,
             Cursor = Cursors.Arrow
         };
-
         ThumbGrid.Children.Add(border);
         _cellBorders.Add(border);
         _cellLabels.Add(label);
@@ -957,13 +963,58 @@ public partial class MainWindow : Window
 
     private void RequestThumbnailUpdate()
     {
-        if (_thumbnailUpdatePending) return;
+        if (_thumbnailUpdatePending)
+        {
+            _thumbnailUpdateRequestedWhilePending = true;
+            return;
+        }
+
+        long nowTicks = Stopwatch.GetTimestamp();
+        long elapsedTicks = nowTicks - _lastThumbnailUpdateTicks;
+        long minIntervalTicks = (long)(ThumbnailUpdateMinInterval.TotalSeconds * Stopwatch.Frequency);
+
+        if (_lastThumbnailUpdateTicks != 0 && elapsedTicks < minIntervalTicks)
+        {
+            _thumbnailUpdateRequestedWhilePending = true;
+            ScheduleThumbnailThrottle(minIntervalTicks - elapsedTicks);
+            return;
+        }
+
         _thumbnailUpdatePending = true;
         Dispatcher.BeginInvoke(DispatcherPriority.Render, () =>
         {
             _thumbnailUpdatePending = false;
+            _thumbnailThrottleTimer.Stop();
             UpdateAllThumbnails();
+            _lastThumbnailUpdateTicks = Stopwatch.GetTimestamp();
+
+            if (_thumbnailUpdateRequestedWhilePending)
+            {
+                _thumbnailUpdateRequestedWhilePending = false;
+                RequestThumbnailUpdate();
+            }
         });
+    }
+
+    private void ScheduleThumbnailThrottle(long remainingTicks)
+    {
+        double remainingMs = remainingTicks * 1000.0 / Stopwatch.Frequency;
+        if (remainingMs < 1)
+            remainingMs = 1;
+
+        _thumbnailThrottleTimer.Stop();
+        _thumbnailThrottleTimer.Interval = TimeSpan.FromMilliseconds(remainingMs);
+        _thumbnailThrottleTimer.Start();
+    }
+
+    private void ThumbnailThrottleTimer_Tick(object? sender, EventArgs e)
+    {
+        _thumbnailThrottleTimer.Stop();
+        if (!_thumbnailUpdateRequestedWhilePending)
+            return;
+
+        _thumbnailUpdateRequestedWhilePending = false;
+        RequestThumbnailUpdate();
     }
 
     // Cell interaction (click / menu / drag reorder)
