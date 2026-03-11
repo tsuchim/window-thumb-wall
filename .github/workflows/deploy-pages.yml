@@ -71,14 +71,14 @@ jobs:
           </html>
           EOF
 
-          cat > .pages-src/PRIVACY.md <<'EOF'
-          ---
-          layout: default
-          title: Privacy Policy
-          permalink: /PRIVACY.html
-          ---
-          EOF
-          cat PRIVACY.md >> .pages-src/PRIVACY.md
+          {
+            printf '%s\n' '---' \
+              'layout: default' \
+              'title: Privacy Policy' \
+              'permalink: /PRIVACY.html' \
+              '---'
+            cat PRIVACY.md
+          } > .pages-src/PRIVACY.md
 
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@v1

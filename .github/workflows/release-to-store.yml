@@ -181,9 +181,21 @@ jobs:
             --clientId "${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}" `
             --clientSecret "${{ secrets.AZURE_AD_APPLICATION_SECRET }}"
 
+          if ($LASTEXITCODE -ne 0) {
+            throw "msstore reconfigure failed with exit code $LASTEXITCODE"
+          }
+
           msstore publish "$($package.FullName)" -id "${{ steps.prereq.outputs.store_product_id }}" --noCommit -v
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "msstore publish failed with exit code $LASTEXITCODE"
+          }
 
       - name: MSStore Commit Submission
         shell: pwsh
         run: |
           msstore submission publish "${{ steps.prereq.outputs.store_product_id }}"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "msstore submission publish failed with exit code $LASTEXITCODE"
+          }
