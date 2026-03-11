@@ -61,7 +61,7 @@ WindowThumbWall の公式配布形式は次の 3 種類です。
 - 外部サーバーへのデータ送信はありません。
 - レイアウト復元に必要な状態だけをローカルに保存します。
 
-詳細: [PRIVACY.md](PRIVACY.md)
+詳細: [プライバシーポリシー](https://tsuchim.github.io/WindowThumbWall/PRIVACY.ja.html)
 
 ## 利用上の注意
 WindowThumbWall は現状有姿で提供されます。すべての Windows 環境や利用形態での互換性、継続的な動作、特定目的への適合性を保証するものではありません。重要な用途に利用する前に、ご自身の環境とウィンドウ構成で十分にご確認ください。

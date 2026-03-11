@@ -114,6 +114,12 @@ $downloadVersion = if ($isDev) { 'dev' } else { $Version }
 $repository = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { 'tsuchim/WindowThumbWall' }
 $serverUrl = if ($env:GITHUB_SERVER_URL) { $env:GITHUB_SERVER_URL.TrimEnd('/') } else { 'https://github.com' }
 $repositoryUrl = "$serverUrl/$repository"
+$repositoryParts = $repository.Split('/')
+$pagesPrivacyUrl = if ($repositoryParts.Length -eq 2) {
+    "https://$($repositoryParts[0]).github.io/$($repositoryParts[1])/PRIVACY.html"
+} else {
+    'https://tsuchim.github.io/WindowThumbWall/PRIVACY.html'
+}
 $downloadsSection = if ($isDev) {
     @"
 ## Downloads
@@ -156,7 +162,7 @@ $downloadsSection
 $highlightsEn
 
 ---
-For privacy details, see [PRIVACY.md]($repositoryUrl/blob/main/PRIVACY.md).
+For privacy details, see [Privacy Policy]($pagesPrivacyUrl).
 "@
 
 $ghNotes | Out-File -FilePath "$OutputDir/release-notes.md" -Encoding utf8

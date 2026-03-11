@@ -61,7 +61,7 @@ WindowThumbWall is officially distributed in three formats.
 - No external data transmission.
 - Local state only, stored on your machine so the app can restore your layout.
 
-Details: [PRIVACY.md](PRIVACY.md)
+Details: [Privacy Policy](https://tsuchim.github.io/WindowThumbWall/PRIVACY.html)
 
 ## Compatibility Note
 WindowThumbWall is provided as-is. Compatibility, continuous operation, and fitness for a particular purpose are not guaranteed for every Windows environment or workflow. If you plan to rely on it for important work, verify its behavior on your own hardware and window setup first.

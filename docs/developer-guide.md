@@ -72,4 +72,7 @@ If you want different Japanese and English release text, you can instead create:
 - [invariants.md](invariants.md)
 - [capture-architecture-clarification.md](capture-architecture-clarification.md)
 - [code-signing-policy.md](code-signing-policy.md)
+- [Public Privacy Policy (EN)](https://tsuchim.github.io/WindowThumbWall/PRIVACY.html)
+- [Public Privacy Policy (JA)](https://tsuchim.github.io/WindowThumbWall/PRIVACY.ja.html)
 - [PRIVACY.md](../PRIVACY.md)
+- [PRIVACY.ja.md](../PRIVACY.ja.md)
