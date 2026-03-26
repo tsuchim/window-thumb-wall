@@ -39,6 +39,12 @@ dotnet build .\WindowThumbWall.csproj -c Release
 ```
 
 ### Tests
+`--no-build` assumes the test project binaries already exist. From a clean CLI state, build the test project once before using the command below.
+
+```powershell
+dotnet build .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release
+```
+
 ```powershell
 dotnet test .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release --no-build
 ```
