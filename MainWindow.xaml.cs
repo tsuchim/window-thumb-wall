@@ -16,7 +16,13 @@ public partial class MainWindow : Window
     private const string SlotDragFormat = "WindowThumbWall.SlotIndex";
     private const double DeadspaceWeight = 1.0;
     private const double DistortionWeight = 0.9;
+    private const double SlotTitleFontSize = 12;
+    private static readonly Thickness CellMargin = new(2);
+    private static readonly Thickness CellBorderThickness = new(1);
+    private static readonly Thickness SlotLabelPadding = new(6, 3, 6, 3);
     private static readonly TimeSpan ThumbnailUpdateMinInterval = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan ThumbnailRefreshDebounce = TimeSpan.FromMilliseconds(160);
+    private static readonly TimeSpan ThumbnailRefreshMinInterval = TimeSpan.FromMilliseconds(1500);
 
     private IntPtr _mainHwnd;
 
@@ -43,6 +49,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _stateSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly DispatcherTimer _thumbnailSettleTimer = new() { Interval = TimeSpan.FromMilliseconds(120) };
     private readonly DispatcherTimer _thumbnailThrottleTimer = new();
+    private readonly DispatcherTimer _thumbnailRefreshTimer = new() { Interval = ThumbnailRefreshDebounce };
     private readonly List<WindowInfo> _windowCache = [];
     private readonly ObservableCollection<AutoAddAppEntry> _autoAddApps = [];
     private readonly HashSet<string> _autoAddAppSet = new(StringComparer.OrdinalIgnoreCase);
@@ -66,6 +73,8 @@ public partial class MainWindow : Window
     private int _lastGridRows = -1;
     private int _lastGridCols = -1;
     private long _lastThumbnailUpdateTicks;
+    private readonly HashSet<IntPtr> _thumbnailRefreshPendingWindows = [];
+    private readonly Dictionary<IntPtr, long> _lastThumbnailRefreshTicks = [];
 
     public MainWindow()
     {
@@ -89,6 +98,7 @@ public partial class MainWindow : Window
         _stateSaveTimer.Tick += StateSaveTimer_Tick;
         _thumbnailSettleTimer.Tick += ThumbnailSettleTimer_Tick;
         _thumbnailThrottleTimer.Tick += ThumbnailThrottleTimer_Tick;
+        _thumbnailRefreshTimer.Tick += ThumbnailRefreshTimer_Tick;
         Loaded += OnLoaded;
         Closed += OnClosed;
         LocationChanged += OnLocationChanged;
@@ -131,6 +141,7 @@ public partial class MainWindow : Window
         _stateSaveTimer.Stop();
         _thumbnailSettleTimer.Stop();
         _thumbnailThrottleTimer.Stop();
+        _thumbnailRefreshTimer.Stop();
         _stateTrackingEnabled = false;
         NativeMethods.DeregisterShellHookWindow(_mainHwnd);
         SaveState();
@@ -283,8 +294,7 @@ public partial class MainWindow : Window
 
             usedHandles.Add(match.Handle);
             int idx = AddSlot();
-            if (_slots[idx].Assign(match.Handle, match.Title, match.ProcessName))
-                _cellLabels[idx].Text = match.Title;
+            AssignSlot(idx, match.Handle, match.Title, match.ProcessName);
         }
 
         if (state.IsFullScreen && _slots.Count > 0)
@@ -327,43 +337,24 @@ public partial class MainWindow : Window
             return (fallbackRows, fallbackCols);
         }
 
-        var aspectRatios = CollectActiveAspectRatios(width / height);
+        double titleBarHeight = EstimateTitleBarHeight();
+        double horizontalChrome = CellMargin.Left + CellMargin.Right + CellBorderThickness.Left + CellBorderThickness.Right;
+        double verticalChrome = CellMargin.Top + CellMargin.Bottom + CellBorderThickness.Top + CellBorderThickness.Bottom;
+        double fallbackAspectRatio =
+            Math.Max(width - horizontalChrome, 0.01) /
+            Math.Max(height - verticalChrome - titleBarHeight, 0.01);
+        var aspectRatios = CollectActiveAspectRatios(fallbackAspectRatio);
 
-        double bestScore = double.PositiveInfinity;
-        double bestDeadspace = double.PositiveInfinity;
-        int bestRows = 1;
-        int bestCols = count;
-
-        for (int rows = 1; rows <= count; rows++)
-        {
-            int cols = (int)Math.Ceiling((double)count / rows);
-            int totalCells = rows * cols;
-            double deadspace = (double)(totalCells - count) / totalCells;
-            double cellAspect = (width * rows) / (height * cols);
-
-            double distortion = 0;
-            for (int i = 0; i < aspectRatios.Count; i++)
-            {
-                double ratio = cellAspect / Math.Max(aspectRatios[i], 0.01);
-                double delta = Math.Log(ratio);
-                distortion += delta * delta;
-            }
-            distortion /= aspectRatios.Count;
-
-            double score = DeadspaceWeight * deadspace + DistortionWeight * distortion;
-            bool isBetter = score < bestScore - 0.000001;
-            bool tieButLessDeadspace = Math.Abs(score - bestScore) <= 0.000001 && deadspace < bestDeadspace;
-
-            if (isBetter || tieButLessDeadspace)
-            {
-                bestScore = score;
-                bestDeadspace = deadspace;
-                bestRows = rows;
-                bestCols = cols;
-            }
-        }
-
-        return (bestRows, bestCols);
+        return GridLayoutScorer.ChooseGrid(
+            count,
+            width,
+            height,
+            aspectRatios,
+            titleBarHeight,
+            horizontalChrome,
+            verticalChrome,
+            DeadspaceWeight,
+            DistortionWeight);
     }
 
     private List<double> CollectActiveAspectRatios(double fallback)
@@ -383,6 +374,28 @@ public partial class MainWindow : Window
         return ratios;
     }
 
+    private double EstimateTitleBarHeight()
+    {
+        double measuredHeight = 0;
+        for (int i = 0; i < _cellLabels.Count; i++)
+        {
+            measuredHeight = Math.Max(measuredHeight, _cellLabels[i].ActualHeight);
+        }
+
+        if (measuredHeight > 0)
+            return measuredHeight;
+
+        var probe = new TextBlock
+        {
+            Text = LocalizedText.Get("slot.empty"),
+            Padding = SlotLabelPadding,
+            FontSize = SlotTitleFontSize,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        return Math.Max(probe.DesiredSize.Height, 0.01);
+    }
+
     private int AddSlot()
     {
         int idx = _cellBorders.Count;
@@ -391,8 +404,8 @@ public partial class MainWindow : Window
         {
             Text = LocalizedText.Get("slot.empty"),
             Foreground = Brushes.LightGray,
-            Padding = new Thickness(6, 3, 6, 3),
-            FontSize = 12,
+            Padding = SlotLabelPadding,
+            FontSize = SlotTitleFontSize,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
 
@@ -433,8 +446,8 @@ public partial class MainWindow : Window
         var border = new Border
         {
             BorderBrush = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
-            BorderThickness = new Thickness(1),
-            Margin = new Thickness(2),
+            BorderThickness = CellBorderThickness,
+            Margin = CellMargin,
             Background = Brushes.Black,
             Child = cellRoot,
             Tag = idx,
@@ -459,7 +472,10 @@ public partial class MainWindow : Window
 
     private void RemoveSlot(int idx)
     {
-        _flashingWindows.Remove(_slots[idx].SourceHwnd);
+        IntPtr sourceHwnd = _slots[idx].SourceHwnd;
+        _flashingWindows.Remove(sourceHwnd);
+        _thumbnailRefreshPendingWindows.Remove(sourceHwnd);
+        _lastThumbnailRefreshTicks.Remove(sourceHwnd);
         _slots[idx].Clear();
         _cellBorders[idx].SizeChanged -= CellLayout_SizeChanged;
         _cellHitLayers[idx].SizeChanged -= CellLayout_SizeChanged;
@@ -555,6 +571,7 @@ public partial class MainWindow : Window
             AutoAddWindowsForRegisteredApps();
         }
         ValidateSlots();
+        RecoverMissingThumbnailRegistrations();
         CheckFlashState();
     }
 
@@ -659,14 +676,13 @@ public partial class MainWindow : Window
                 createdNew = true;
             }
 
-            if (!_slots[sourceIndex].Assign(info.Handle, info.Title, info.ProcessName))
+            if (!AssignSlot(sourceIndex, info.Handle, info.Title, info.ProcessName))
             {
                 if (createdNew)
                     RemoveSlot(sourceIndex);
                 return;
             }
 
-            _cellLabels[sourceIndex].Text = info.Title;
             if (sourceIndex != targetIndex)
                 InsertSlot(sourceIndex, targetIndex);
             else
@@ -689,9 +705,8 @@ public partial class MainWindow : Window
         if (target == -1)
             target = AddSlot();
 
-        if (_slots[target].Assign(info.Handle, info.Title, info.ProcessName))
+        if (AssignSlot(target, info.Handle, info.Title, info.ProcessName))
         {
-            _cellLabels[target].Text = info.Title;
             RequestStateSave();
         }
     }
@@ -979,6 +994,96 @@ public partial class MainWindow : Window
     {
         foreach (var slot in _slots)
             slot.UpdateThumbnail();
+    }
+
+    private bool AssignSlot(int idx, IntPtr sourceHwnd, string title, string processName)
+    {
+        IntPtr previousSource = _slots[idx].SourceHwnd;
+        if (previousSource != IntPtr.Zero && previousSource != sourceHwnd)
+        {
+            _flashingWindows.Remove(previousSource);
+            _thumbnailRefreshPendingWindows.Remove(previousSource);
+            _lastThumbnailRefreshTicks.Remove(previousSource);
+        }
+
+        if (!_slots[idx].Assign(sourceHwnd, title, processName))
+            return false;
+
+        _cellLabels[idx].Text = title;
+        RequestThumbnailRegistrationRefresh(sourceHwnd, bypassCooldown: true);
+        return true;
+    }
+
+    private void RecoverMissingThumbnailRegistrations()
+    {
+        foreach (var slot in _slots)
+        {
+            if (!slot.IsOccupied || slot.HasRegistration)
+                continue;
+
+            RequestThumbnailRegistrationRefresh(slot.SourceHwnd, bypassCooldown: true);
+        }
+    }
+
+    private int FindSlotIndexBySourceHwnd(IntPtr sourceHwnd)
+    {
+        for (int i = 0; i < _slots.Count; i++)
+        {
+            if (_slots[i].IsOccupied && _slots[i].SourceHwnd == sourceHwnd)
+                return i;
+        }
+
+        return -1;
+    }
+
+    private void RequestThumbnailRegistrationRefresh(IntPtr sourceHwnd, bool bypassCooldown = false)
+    {
+        if (sourceHwnd == IntPtr.Zero)
+            return;
+
+        if (FindSlotIndexBySourceHwnd(sourceHwnd) < 0)
+            return;
+
+        if (!bypassCooldown &&
+            _lastThumbnailRefreshTicks.TryGetValue(sourceHwnd, out long lastRefreshTicks))
+        {
+            long nowTicks = Stopwatch.GetTimestamp();
+            long minIntervalTicks = (long)(ThumbnailRefreshMinInterval.TotalSeconds * Stopwatch.Frequency);
+            if (nowTicks - lastRefreshTicks < minIntervalTicks)
+                return;
+        }
+
+        if (!_thumbnailRefreshPendingWindows.Add(sourceHwnd))
+            return;
+
+        _thumbnailRefreshTimer.Stop();
+        _thumbnailRefreshTimer.Start();
+    }
+
+    private void ThumbnailRefreshTimer_Tick(object? sender, EventArgs e)
+    {
+        _thumbnailRefreshTimer.Stop();
+        if (_thumbnailRefreshPendingWindows.Count == 0)
+            return;
+
+        IntPtr[] pendingWindows = _thumbnailRefreshPendingWindows.ToArray();
+        _thumbnailRefreshPendingWindows.Clear();
+
+        bool refreshedAny = false;
+        long refreshTicks = Stopwatch.GetTimestamp();
+        foreach (IntPtr sourceHwnd in pendingWindows)
+        {
+            int idx = FindSlotIndexBySourceHwnd(sourceHwnd);
+            if (idx < 0)
+                continue;
+
+            _lastThumbnailRefreshTicks[sourceHwnd] = refreshTicks;
+            if (_slots[idx].RefreshRegistration())
+                refreshedAny = true;
+        }
+
+        if (refreshedAny)
+            ScheduleThumbnailSettle();
     }
 
     private void RequestThumbnailUpdate()
@@ -1285,6 +1390,10 @@ public partial class MainWindow : Window
             {
                 OnWindowFlash(targetHwnd);
             }
+            else if (shellEvent == NativeMethods.HSHELL_REDRAW)
+            {
+                OnWindowRedraw(targetHwnd);
+            }
             else if ((shellEvent & 0x7FFF) == NativeMethods.HSHELL_WINDOWACTIVATED)
             {
                 OnWindowActivated(targetHwnd);
@@ -1315,11 +1424,15 @@ public partial class MainWindow : Window
                 if (_slots[i].IsOccupied && _slots[i].SourceHwnd == hwnd)
                 {
                     StopFlashBorder(i);
-                    return;
+                    break;
                 }
             }
         }
+
+        RequestThumbnailRegistrationRefresh(hwnd);
     }
+
+    private void OnWindowRedraw(IntPtr hwnd) => RequestThumbnailRegistrationRefresh(hwnd);
 
     private void CheckFlashState()
     {

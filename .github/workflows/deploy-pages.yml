@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'PRIVACY.md'
+      - 'PRIVACY.ja.md'
       - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
 
@@ -40,7 +41,7 @@ jobs:
 
           cat > .pages-src/_layouts/default.html <<'EOF'
           <!DOCTYPE html>
-          <html lang="en">
+          <html lang="{{ page.lang | default: 'en' }}">
           <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -79,6 +80,16 @@ jobs:
               '---'
             cat PRIVACY.md
           } > .pages-src/PRIVACY.md
+
+          {
+            printf '%s\n' '---' \
+              'layout: default' \
+              'title: プライバシーポリシー' \
+              'permalink: /PRIVACY.ja.html' \
+              'lang: ja' \
+              '---'
+            cat PRIVACY.ja.md
+          } > .pages-src/PRIVACY.ja.md
 
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@v1
