@@ -100,66 +100,91 @@ $highlightsCommon = Get-PreferredOrNull `
     -PreferredPath $releaseHighlightsInput `
     -FallbackPath $releaseNotesInput
 
+$defaultJaContent = $defaultHighlightsJa
+if ($highlightsCommon) {
+    $defaultJaContent = $highlightsCommon
+}
+
+$defaultEnContent = $defaultHighlightsEn
+if ($highlightsCommon) {
+    $defaultEnContent = $highlightsCommon
+}
+
 $highlightsJa = Get-HighlightsContent `
     -PreferredPath $releaseHighlightsJaInput `
     -FallbackPath $releaseNotesJaInput `
-    -DefaultContent $(if ($highlightsCommon) { $highlightsCommon } else { $defaultHighlightsJa })
+    -DefaultContent $defaultJaContent
 
 $highlightsEn = Get-HighlightsContent `
     -PreferredPath $releaseHighlightsEnInput `
     -FallbackPath $releaseNotesEnInput `
-    -DefaultContent $(if ($highlightsCommon) { $highlightsCommon } else { $defaultHighlightsEn })
+    -DefaultContent $defaultEnContent
 
-$downloadVersion = if ($isDev) { 'dev' } else { $Version }
-$repository = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { 'tsuchim/WindowThumbWall' }
-$serverUrl = if ($env:GITHUB_SERVER_URL) { $env:GITHUB_SERVER_URL.TrimEnd('/') } else { 'https://github.com' }
+$downloadVersion = $Version
+if ($isDev) {
+    $downloadVersion = 'dev'
+}
+
+$repository = 'tsuchim/WindowThumbWall'
+if ($env:GITHUB_REPOSITORY) {
+    $repository = $env:GITHUB_REPOSITORY
+}
+
+$serverUrl = 'https://github.com'
+if ($env:GITHUB_SERVER_URL) {
+    $serverUrl = $env:GITHUB_SERVER_URL.TrimEnd('/')
+}
 $repositoryUrl = "$serverUrl/$repository"
-$downloadsSection = if ($isDev) {
-    @"
-## Downloads
-Download links are omitted for dev builds. Use the workflow artifacts from the current run instead.
-"@
+if ($isDev) {
+    $downloadsSection = [string]::Join("`n", @(
+        '## Downloads'
+        'Download links are omitted for dev builds. Use the workflow artifacts from the current run instead.'
+    ))
 } else {
-    @"
-## Downloads
-Official builds are available in the following formats:
-
-### Windows x64 (Standard)
-- **ZIP**: [WindowThumbWall-$downloadVersion-win-x64.zip]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.zip)
-- **MSI**: [WindowThumbWall-$downloadVersion-win-x64.msi]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.msi)
-- **MSIX**: [WindowThumbWall-$downloadVersion-win-x64.msix]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.msix)
-
-### Windows ARM64 (Surface Pro, etc.)
-- **ZIP**: [WindowThumbWall-$downloadVersion-win-arm64.zip]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-arm64.zip)
-- **MSI**: [WindowThumbWall-$downloadVersion-win-arm64.msi]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-arm64.msi)
-- **MSIX**: [WindowThumbWall-$downloadVersion-win-arm64.msix]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-arm64.msix)
-"@
+    $downloadsSection = [string]::Join("`n", @(
+        '## Downloads'
+        'Official builds are available in the following formats:'
+        ''
+        '### Windows x64 (Standard)'
+        "- **ZIP**: [WindowThumbWall-$downloadVersion-win-x64.zip]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.zip)"
+        "- **MSI**: [WindowThumbWall-$downloadVersion-win-x64.msi]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.msi)"
+        "- **MSIX**: [WindowThumbWall-$downloadVersion-win-x64.msix]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-x64.msix)"
+        ''
+        '### Windows ARM64 (Surface Pro, etc.)'
+        "- **ZIP**: [WindowThumbWall-$downloadVersion-win-arm64.zip]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-arm64.zip)"
+        "- **MSI**: [WindowThumbWall-$downloadVersion-win-arm64.msi]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-arm64.msi)"
+        "- **MSIX**: [WindowThumbWall-$downloadVersion-win-arm64.msix]($repositoryUrl/releases/download/$downloadVersion/WindowThumbWall-$downloadVersion-win-arm64.msix)"
+    ))
 }
 
 # --- 1. GitHub Release Notes (dist/release-notes.md) ---
-$ghNotes = @"
-# Window Thumb Wall $Version
+$ghNotes = [string]::Join("`n", @(
+    "# Window Thumb Wall $Version"
+    ''
+    'Keep multiple windows visible at once with a fast, low-overhead live thumbnail wall for Windows.'
+    ''
+    $downloadsSection
+    ''
+    '## Why Use It'
+    '- Watch multiple windows without constant app switching.'
+    '- Keep logs, dashboards, browsers, chats, and terminals visible together.'
+    '- Use a second display as a lightweight monitoring wall.'
+    '- Notice when a monitored window needs attention through a flashing red border.'
+    '- Click a thumbnail to jump back to its source window.'
+    '- Stay local and private with no telemetry or cloud dependency.'
+    ''
+    '## What''s New'
+    $highlightsEn
+    ''
+    '---'
+    "For privacy details, see [PRIVACY.md]($repositoryUrl/blob/main/PRIVACY.md)."
+))
 
-Keep multiple windows visible at once with a fast, low-overhead live thumbnail wall for Windows.
-
-$downloadsSection
-
-## Why Use It
-- Watch multiple windows without constant app switching.
-- Keep logs, dashboards, browsers, chats, and terminals visible together.
-- Use a second display as a lightweight monitoring wall.
-- Notice when a monitored window needs attention through a flashing red border.
-- Click a thumbnail to jump back to its source window.
-- Stay local and private with no telemetry or cloud dependency.
-
-## What's New
-$highlightsEn
-
----
-For privacy details, see [PRIVACY.md]($repositoryUrl/blob/main/PRIVACY.md).
-"@
-
-$ghNotes | Out-File -FilePath "$OutputDir/release-notes.md" -Encoding utf8
+[System.IO.File]::WriteAllText(
+    (Join-Path $OutputDir 'release-notes.md'),
+    $ghNotes,
+    [System.Text.UTF8Encoding]::new($false)
+)
 
 # --- 2. Store Listing JA (dist/store-listing-ja.md) ---
 $storeJa = @"
