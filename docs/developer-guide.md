@@ -30,6 +30,26 @@ This document covers local development, packaging, and release-related reference
 dotnet run --project WindowThumbWall.csproj
 ```
 
+## Build And Test Split
+Use the supported command split below when working locally.
+
+### App Build
+```powershell
+dotnet build .\WindowThumbWall.csproj -c Release
+```
+
+### Tests
+```powershell
+dotnet test .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release --no-build
+```
+
+### Packaging Build
+```powershell
+.\packaging\build-msix.ps1 -Configuration Release
+```
+
+`packaging/WindowThumbWall.Package.wapproj` is built with Visual Studio MSBuild/Desktop Bridge tooling. Plain `dotnet build` is not the supported packaging path in this repo/environment.
+
 ## Build Packages
 Official distributions must continue to support ZIP, MSI, and MSIX.
 
@@ -44,6 +64,8 @@ Official distributions must continue to support ZIP, MSI, and MSIX.
 .\packaging\build-msi.ps1
 .\packaging\build-msix.ps1
 ```
+
+`build-msix.ps1` locates Visual Studio via `vswhere.exe`, verifies Desktop Bridge imports are available, and fails with an actionable error instead of falling back to `dotnet build`.
 
 For signing expectations, see [code-signing-policy.md](code-signing-policy.md).
 
