@@ -19,6 +19,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="artifacts\**\*" />
+    <EmbeddedResource Remove="artifacts\**\*" />
+    <None Remove="artifacts\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\\WindowThumbWall.csproj" />
   </ItemGroup>
 

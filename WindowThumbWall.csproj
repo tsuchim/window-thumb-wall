@@ -17,6 +17,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="artifacts\**\*;WindowThumbWall.Tests\artifacts\**\*" />
+    <EmbeddedResource Remove="artifacts\**\*;WindowThumbWall.Tests\artifacts\**\*" />
+    <None Remove="artifacts\**\*;WindowThumbWall.Tests\artifacts\**\*" />
     <Compile Remove="WindowThumbWall.Tests\**\*.cs" />
     <EmbeddedResource Remove="WindowThumbWall.Tests\**\*" />
     <None Remove="WindowThumbWall.Tests\**\*" />
