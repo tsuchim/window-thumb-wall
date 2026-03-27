@@ -65,6 +65,27 @@ function Get-DependencyPackages {
     return $packages
 }
 
+function Get-PackageVersionFromBundlePath {
+    param(
+        [string]$BundlePath
+    )
+
+    $packageVersionMatch = [regex]::Match([System.IO.Path]::GetFileNameWithoutExtension($BundlePath), '_(\d+\.\d+\.\d+\.\d+)_')
+    if (-not $packageVersionMatch.Success) {
+        throw "Package version could not be parsed from bundle name: $BundlePath"
+    }
+
+    return [version]$packageVersionMatch.Groups[1].Value
+}
+
+function Get-ExpectedPackageIdentity {
+    [xml]$manifest = Get-Content (Join-Path $PSScriptRoot "Package.appxmanifest")
+    return [pscustomobject]@{
+        Name = [string]$manifest.Package.Identity.Name
+        Publisher = [string]$manifest.Package.Identity.Publisher
+    }
+}
+
 function Test-DeveloperModeEnabled {
     $appModelUnlock = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" -ErrorAction SilentlyContinue
     if ($null -eq $appModelUnlock) {
@@ -148,6 +169,7 @@ function Get-LocalRegisterStagePath {
 
     [xml]$stageManifest = Get-Content (Join-Path $stagePath "AppxManifest.xml")
     $stageManifest.Package.Identity.Version = $PackageVersion.ToString()
+    $stageManifest.Package.Identity.ProcessorArchitecture = if ($TargetArchitecture -eq "ARM64") { "arm64" } else { "x64" }
     $settings = New-Object System.Xml.XmlWriterSettings
     $settings.Indent = $true
     $settings.OmitXmlDeclaration = $false
@@ -213,7 +235,13 @@ After either fix, run:
 }
 
 function Launch-InstalledApp {
-    $installedPackage = Get-AppxPackage tsuchim.WindowThumbWall |
+    param(
+        [string]$PackageName,
+        [string]$ExpectedPublisher
+    )
+
+    $installedPackage = Get-AppxPackage -Name $PackageName |
+        Where-Object { $_.Publisher -eq $ExpectedPublisher } |
         Sort-Object Version -Descending |
         Select-Object -First 1
 
@@ -229,6 +257,7 @@ function Launch-InstalledApp {
 
 $packageDir = Get-LatestPackageDirectory
 $targetArchitecture = Get-TargetArchitecture
+$packageIdentity = Get-ExpectedPackageIdentity
 $bundlePath = Get-ChildItem -Path $packageDir.FullName -File -Filter *.msixbundle |
     Sort-Object LastWriteTime -Descending |
     Select-Object -First 1 -ExpandProperty FullName
@@ -236,14 +265,6 @@ $certificatePath = Get-ChildItem -Path $packageDir.FullName -File -Filter *.cer 
     Sort-Object LastWriteTime -Descending |
     Select-Object -First 1 -ExpandProperty FullName
 $dependencyPackages = Get-DependencyPackages -PackageDirectory $packageDir.FullName -TargetArchitecture $targetArchitecture
-$packageVersionMatch = [regex]::Match([System.IO.Path]::GetFileNameWithoutExtension($bundlePath), '_(\d+\.\d+\.\d+\.\d+)_')
-$packageVersion =
-    if ($packageVersionMatch.Success) {
-        [version]$packageVersionMatch.Groups[1].Value
-    }
-    else {
-        throw "Package version could not be parsed from bundle name: $bundlePath"
-    }
 
 if (-not $bundlePath) {
     throw "No .msixbundle file was found in '$($packageDir.FullName)'."
@@ -252,6 +273,8 @@ if (-not $bundlePath) {
 if (-not $certificatePath) {
     throw "No certificate file was found in '$($packageDir.FullName)'."
 }
+
+$packageVersion = Get-PackageVersionFromBundlePath -BundlePath $bundlePath
 
 Write-Output "Installing local test package from: $($packageDir.FullName)"
 Write-Output "Bundle: $bundlePath"
@@ -276,4 +299,4 @@ catch {
     }
 }
 
-Launch-InstalledApp
+Launch-InstalledApp -PackageName $packageIdentity.Name -ExpectedPublisher $packageIdentity.Publisher

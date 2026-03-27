@@ -24,6 +24,9 @@ public partial class MainWindow
 {
     private static readonly Color AttentionRed = Colors.Red;
     private static readonly Color AttentionOrange = Color.FromRgb(0xFF, 0x8C, 0x00);
+    private const string NotificationDiagnosticsEnvironmentVariable = "WINDOWTHUMBWALL_NOTIFICATION_DIAGNOSTICS";
+    private const int NotificationDiagnosticsMaxCharacters = 160;
+    private const long NotificationDiagnosticsMaxBytes = 256 * 1024;
     private static readonly string NotificationDiagnosticsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "WindowThumbWall",
@@ -300,6 +303,9 @@ public partial class MainWindow
         IReadOnlyList<UserNotification> notifications,
         IReadOnlyList<NotificationWindowCandidate> candidates)
     {
+        if (!ShouldWriteNotificationDiagnostics())
+            return;
+
         StringBuilder builder = new();
         int monitoredCount = _slots.Count(static slot => slot.IsOccupied);
         builder.AppendLine(
@@ -311,7 +317,7 @@ public partial class MainWindow
             foreach (ThumbnailSlot slot in _slots.Where(static slot => slot.IsOccupied))
             {
                 builder.AppendLine(
-                    $"  slot hwnd={FormatHandle(slot.SourceHwnd)} title=\"{slot.SourceTitle}\" process=\"{slot.SourceProcessName}\"");
+                    $"  slot hwnd={FormatHandle(slot.SourceHwnd)} title=\"{SanitizeNotificationDiagnosticValue(slot.SourceTitle)}\" process=\"{SanitizeNotificationDiagnosticValue(slot.SourceProcessName)}\"");
             }
         }
 
@@ -320,7 +326,7 @@ public partial class MainWindow
         {
             bool monitored = _slots.Any(slot => slot.IsOccupied && slot.SourceHwnd == candidate.Handle);
             builder.AppendLine(
-                $"  hwnd={FormatHandle(candidate.Handle)} monitored={monitored} title=\"{candidate.Title}\" process=\"{candidate.ProcessName}\" exe=\"{Path.GetFileName(candidate.ExecutablePath)}\" aumid=\"{candidate.AppUserModelId}\"");
+                $"  hwnd={FormatHandle(candidate.Handle)} monitored={monitored} title=\"{SanitizeNotificationDiagnosticValue(candidate.Title)}\" process=\"{SanitizeNotificationDiagnosticValue(candidate.ProcessName)}\" exe=\"{SanitizeNotificationDiagnosticValue(Path.GetFileName(candidate.ExecutablePath))}\" aumid=\"{SanitizeNotificationDiagnosticValue(candidate.AppUserModelId)}\"");
         }
 
         foreach (UserNotification notification in notifications)
@@ -329,7 +335,7 @@ public partial class MainWindow
             NotificationMatchResult result = NotificationWindowMatcher.Resolve(signal, candidates);
 
             builder.AppendLine(
-                $"Notification id={notification.Id} appInfo={appInfoStatus} app=\"{signal.AppDisplayName}\" aumid=\"{signal.AppUserModelId}\" texts=\"{string.Join(" | ", signal.NotificationTexts)}\" result={result.Kind} handles=[{string.Join(", ", result.CandidateHandles.Select(FormatHandle))}]");
+                $"Notification id={notification.Id} appInfo={appInfoStatus} app=\"{SanitizeNotificationDiagnosticValue(signal.AppDisplayName)}\" aumid=\"{SanitizeNotificationDiagnosticValue(signal.AppUserModelId)}\" texts=\"{string.Join(" | ", signal.NotificationTexts.Select(SanitizeNotificationDiagnosticValue))}\" result={result.Kind} handles=[{string.Join(", ", result.CandidateHandles.Select(FormatHandle))}]");
 
             foreach (IntPtr handle in result.CandidateHandles)
             {
@@ -338,7 +344,7 @@ public partial class MainWindow
                 {
                     bool monitored = _slots.Any(slot => slot.IsOccupied && slot.SourceHwnd == handle);
                     builder.AppendLine(
-                        $"    matched hwnd={FormatHandle(candidate.Handle)} monitored={monitored} title=\"{candidate.Title}\" process=\"{candidate.ProcessName}\" exe=\"{Path.GetFileName(candidate.ExecutablePath)}\" aumid=\"{candidate.AppUserModelId}\"");
+                        $"    matched hwnd={FormatHandle(candidate.Handle)} monitored={monitored} title=\"{SanitizeNotificationDiagnosticValue(candidate.Title)}\" process=\"{SanitizeNotificationDiagnosticValue(candidate.ProcessName)}\" exe=\"{SanitizeNotificationDiagnosticValue(Path.GetFileName(candidate.ExecutablePath))}\" aumid=\"{SanitizeNotificationDiagnosticValue(candidate.AppUserModelId)}\"");
                 }
             }
         }
@@ -348,11 +354,51 @@ public partial class MainWindow
 
     private static string FormatHandle(IntPtr handle) => $"0x{handle.ToInt64():X}";
 
+    private static bool ShouldWriteNotificationDiagnostics()
+    {
+        string? value = Environment.GetEnvironmentVariable(NotificationDiagnosticsEnvironmentVariable);
+        return string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string SanitizeNotificationDiagnosticValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        string collapsed = string.Join(" ", value.Split([' ', '\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries));
+        if (collapsed.Length <= NotificationDiagnosticsMaxCharacters)
+            return collapsed;
+
+        return collapsed[..(NotificationDiagnosticsMaxCharacters - 3)] + "...";
+    }
+
+    private static void RotateNotificationDiagnosticsIfNeeded()
+    {
+        if (!File.Exists(NotificationDiagnosticsPath))
+            return;
+
+        FileInfo logFile = new(NotificationDiagnosticsPath);
+        if (logFile.Length < NotificationDiagnosticsMaxBytes)
+            return;
+
+        string archivedPath = NotificationDiagnosticsPath + ".1";
+        if (File.Exists(archivedPath))
+            File.Delete(archivedPath);
+
+        File.Move(NotificationDiagnosticsPath, archivedPath);
+    }
+
     private static void AppendNotificationDiagnostic(string message)
     {
+        if (!ShouldWriteNotificationDiagnostics())
+            return;
+
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(NotificationDiagnosticsPath)!);
+            RotateNotificationDiagnosticsIfNeeded();
             string line = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff zzz}] {message}{Environment.NewLine}";
             File.AppendAllText(NotificationDiagnosticsPath, line, Encoding.UTF8);
         }
