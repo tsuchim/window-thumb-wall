@@ -19,6 +19,7 @@ public sealed class ShortcutGuideWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var header = new TextBlock
         {
@@ -29,14 +30,6 @@ public sealed class ShortcutGuideWindow : Window
             Margin = new Thickness(0, 0, 0, 8)
         };
         Grid.SetRow(header, 0);
-
-        var desc = new TextBlock
-        {
-            Text = LocalizedText.Get("guide.desc"),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC)),
-            Margin = new Thickness(0, 0, 0, 10)
-        };
-        Grid.SetRow(desc, 1);
 
         var rows = BuildRows();
         var list = new ListView
@@ -80,7 +73,21 @@ public sealed class ShortcutGuideWindow : Window
             CellTemplate = BuildNormalTextCellTemplate(nameof(GuideItem.Action))
         });
         list.View = view;
-        Grid.SetRow(list, 2);
+        Grid.SetRow(list, 1);
+
+        var footer = new Grid();
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetRow(footer, 2);
+
+        var version = new TextBlock
+        {
+            Text = BuildVersionText(),
+            Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA)),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 12, 0)
+        };
+        Grid.SetColumn(version, 0);
 
         var closeButton = new Button
         {
@@ -90,12 +97,13 @@ public sealed class ShortcutGuideWindow : Window
             MinWidth = 90
         };
         closeButton.Click += (_, _) => Close();
-        Grid.SetRow(closeButton, 3);
+        Grid.SetColumn(closeButton, 1);
 
         root.Children.Add(header);
-        root.Children.Add(desc);
         root.Children.Add(list);
-        root.Children.Add(closeButton);
+        footer.Children.Add(version);
+        footer.Children.Add(closeButton);
+        root.Children.Add(footer);
         Content = root;
 
         Loaded += (_, _) => FreezeMinimumSizeFromContent(list);
@@ -116,6 +124,20 @@ public sealed class ShortcutGuideWindow : Window
     ];
 
     private sealed record GuideItem(string Input, string Action);
+
+    private static string BuildVersionText()
+    {
+        Version? version = typeof(ShortcutGuideWindow).Assembly.GetName().Version;
+        string versionText = version switch
+        {
+            null => "?",
+            { Revision: > 0 } => version.ToString(),
+            { Build: > 0 } => version.ToString(3),
+            _ => version.ToString(2)
+        };
+
+        return string.Format(LocalizedText.Get("guide.version"), versionText);
+    }
 
     private void FreezeMinimumSizeFromContent(ListView list)
     {

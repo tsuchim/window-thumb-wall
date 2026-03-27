@@ -57,9 +57,11 @@ public partial class MainWindow : Window
     private Point _appListDragStartPoint;
     private string? _appListDragSourceProcessName;
     private int _autoAddMaintenanceTick;
+    private bool _notificationAttentionEnabled;
 
     private uint _shellHookMsgId;
     private readonly HashSet<IntPtr> _flashingWindows = [];
+    private readonly List<AttentionVisualState> _slotAttentionVisualStates = [];
     private static readonly SolidColorBrush NormalBorderBrush =
         new(Color.FromRgb(0x55, 0x55, 0x55));
     static MainWindow() => NormalBorderBrush.Freeze();
@@ -83,6 +85,7 @@ public partial class MainWindow : Window
 
         // Restore window geometry before the window is shown.
         _pendingRestore = AppState.Load();
+        _notificationAttentionEnabled = _pendingRestore.EnableOsNotificationAttention;
         if (_pendingRestore.Geometry is { Width: > 0, Height: > 0 } geo)
         {
             WindowStartupLocation = WindowStartupLocation.Manual;
@@ -131,6 +134,8 @@ public partial class MainWindow : Window
         RestorePanelLayout();
         RestoreAutoAddApps();
         RestoreSlots();
+        if (_notificationAttentionEnabled)
+            InitializeNotificationListenerAsync();
         _timer.Start();
         _stateTrackingEnabled = true;
     }
@@ -143,6 +148,7 @@ public partial class MainWindow : Window
         _thumbnailThrottleTimer.Stop();
         _thumbnailRefreshTimer.Stop();
         _stateTrackingEnabled = false;
+        DisposeNotificationListener();
         NativeMethods.DeregisterShellHookWindow(_mainHwnd);
         SaveState();
         foreach (var slot in _slots) slot.Clear();
@@ -196,7 +202,8 @@ public partial class MainWindow : Window
             LeftPanelWidth = GetPersistedLength(
                 _isFullScreen ? _savedLeftColWidth : LeftColumnDefinition.Width,
                 LeftPanel.ActualWidth),
-            AppListHeight = GetPersistedLength(AppListRowDefinition.Height, AppList.ActualHeight)
+            AppListHeight = GetPersistedLength(AppListRowDefinition.Height, AppList.ActualHeight),
+            EnableOsNotificationAttention = _notificationAttentionEnabled
         };
 
         foreach (var slot in _slots)
@@ -460,6 +467,7 @@ public partial class MainWindow : Window
         _cellLabels.Add(label);
         _cellHitLayers.Add(hitLayer);
         _cellHosts.Add(host);
+        _slotAttentionVisualStates.Add(AttentionVisualState.None);
 
         RebuildGrid();
 
@@ -473,6 +481,7 @@ public partial class MainWindow : Window
     private void RemoveSlot(int idx)
     {
         IntPtr sourceHwnd = _slots[idx].SourceHwnd;
+        ClearNotificationAttentionGroupsForWindow(sourceHwnd);
         _flashingWindows.Remove(sourceHwnd);
         _thumbnailRefreshPendingWindows.Remove(sourceHwnd);
         _lastThumbnailRefreshTicks.Remove(sourceHwnd);
@@ -488,6 +497,7 @@ public partial class MainWindow : Window
         _cellHitLayers.RemoveAt(idx);
         _cellHosts.RemoveAt(idx);
         _slots.RemoveAt(idx);
+        _slotAttentionVisualStates.RemoveAt(idx);
 
         for (int i = 0; i < _cellBorders.Count; i++)
         {
@@ -497,6 +507,7 @@ public partial class MainWindow : Window
 
         RebuildGrid();
         RequestStateSave();
+        QueueNotificationAttentionSync();
     }
 
     private void RebuildGrid()
@@ -1001,6 +1012,7 @@ public partial class MainWindow : Window
         IntPtr previousSource = _slots[idx].SourceHwnd;
         if (previousSource != IntPtr.Zero && previousSource != sourceHwnd)
         {
+            ClearNotificationAttentionGroupsForWindow(previousSource);
             _flashingWindows.Remove(previousSource);
             _thumbnailRefreshPendingWindows.Remove(previousSource);
             _lastThumbnailRefreshTicks.Remove(previousSource);
@@ -1011,6 +1023,8 @@ public partial class MainWindow : Window
 
         _cellLabels[idx].Text = title;
         RequestThumbnailRegistrationRefresh(sourceHwnd, bypassCooldown: true);
+        UpdateSlotAttentionVisual(idx);
+        QueueNotificationAttentionSync();
         return true;
     }
 
@@ -1406,27 +1420,24 @@ public partial class MainWindow : Window
     {
         for (int i = 0; i < _slots.Count; i++)
         {
-            if (_slots[i].IsOccupied && _slots[i].SourceHwnd == hwnd)
-            {
-                if (_flashingWindows.Add(hwnd))
-                    StartFlashBorder(i);
-                return;
-            }
+            if (!_slots[i].IsOccupied || _slots[i].SourceHwnd != hwnd)
+                continue;
+
+            if (_flashingWindows.Add(hwnd))
+                UpdateSlotAttentionVisual(i);
+
+            return;
         }
     }
 
     private void OnWindowActivated(IntPtr hwnd)
     {
+        ClearNotificationAttentionGroupsForWindow(hwnd);
         if (_flashingWindows.Remove(hwnd))
         {
-            for (int i = 0; i < _slots.Count; i++)
-            {
-                if (_slots[i].IsOccupied && _slots[i].SourceHwnd == hwnd)
-                {
-                    StopFlashBorder(i);
-                    break;
-                }
-            }
+            int slotIndex = FindSlotIndexBySourceHwnd(hwnd);
+            if (slotIndex >= 0)
+                UpdateSlotAttentionVisual(slotIndex);
         }
 
         RequestThumbnailRegistrationRefresh(hwnd);
@@ -1436,28 +1447,25 @@ public partial class MainWindow : Window
 
     private void CheckFlashState()
     {
-        if (_flashingWindows.Count == 0) return;
+        if (_flashingWindows.Count == 0)
+            return;
+
         IntPtr fg = NativeMethods.GetForegroundWindow();
-        if (_flashingWindows.Remove(fg))
-        {
-            for (int i = 0; i < _slots.Count; i++)
-            {
-                if (_slots[i].IsOccupied && _slots[i].SourceHwnd == fg)
-                {
-                    StopFlashBorder(i);
-                    return;
-                }
-            }
-        }
+        if (!_flashingWindows.Remove(fg))
+            return;
+
+        int slotIndex = FindSlotIndexBySourceHwnd(fg);
+        if (slotIndex >= 0)
+            UpdateSlotAttentionVisual(slotIndex);
     }
 
-    private static void StartFlashBorder(Border border)
+    private static void StartFlashBorder(Border border, Color color)
     {
-        var brush = new SolidColorBrush(Colors.Red);
+        var brush = new SolidColorBrush(color);
         var anim = new ColorAnimation
         {
-            From = Colors.Red,
-            To = Color.FromArgb(0x40, 0xFF, 0x00, 0x00),
+            From = color,
+            To = Color.FromArgb(0x40, color.R, color.G, color.B),
             Duration = TimeSpan.FromMilliseconds(400),
             AutoReverse = true,
             RepeatBehavior = RepeatBehavior.Forever
@@ -1467,7 +1475,7 @@ public partial class MainWindow : Window
         border.BorderThickness = new Thickness(3);
     }
 
-    private void StartFlashBorder(int idx) => StartFlashBorder(_cellBorders[idx]);
+    private void StartFlashBorder(int idx, Color color) => StartFlashBorder(_cellBorders[idx], color);
 
     private void StopFlashBorder(int idx)
     {

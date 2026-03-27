@@ -50,6 +50,7 @@ Treat the Git tag `vX.Y.Z` as the release source of truth. Use the table below t
 | [WindowThumbWall.csproj](../WindowThumbWall.csproj) | `X.Y.Z` and `X.Y.Z.0` | Manual | Update `Version`, `AssemblyVersion`, and `FileVersion` together. |
 | [packaging/AppxManifest.xml](../packaging/AppxManifest.xml) | `X.Y.Z.0` | Manual in source, automatic in release output | The build workflow patches the copied manifest inside the release package from the tag, but the source manifest should still be kept current for local packaging clarity. |
 | [packaging/Package.appxmanifest](../packaging/Package.appxmanifest) | `X.Y.Z.0` | Manual in source, automatic in Store workflow | The Store workflow rewrites the manifest before building the Store package, but the checked-in file should still track the current release version. |
+| [docs/notification-attention-design.md](notification-attention-design.md) | current behavior | Manual | Update whenever notification matching rules or attention visuals change. |
 | Release notes input files | `packaging/release-notes-<version>.md` and localized variants | Manual | Create the files for the exact plain version such as `0.6.2`, without the `v` prefix. |
 | Release highlights input files | `packaging/release-highlights-<version>.md` and localized variants | Manual | Optional, but if used they must match the same plain version as the tag. |
 | Generated artifact filenames | `WindowThumbWall-vX.Y.Z-win-*.zip/msi/msix` | Automatic from tag | Produced by the build workflow. |
@@ -64,8 +65,9 @@ Before creating `vX.Y.Z`, make sure these version-bearing sources have been revi
 1. [WindowThumbWall.csproj](../WindowThumbWall.csproj)
 2. [packaging/AppxManifest.xml](../packaging/AppxManifest.xml)
 3. [packaging/Package.appxmanifest](../packaging/Package.appxmanifest)
-4. `packaging/release-notes-<version>.md` or localized equivalents when the release has user-visible changes
-5. `packaging/release-highlights-<version>.md` or localized equivalents if you use highlights files
+4. [docs/notification-attention-design.md](notification-attention-design.md) when notification matching or attention cues changed
+5. `packaging/release-notes-<version>.md` or localized equivalents when the release has user-visible changes
+6. `packaging/release-highlights-<version>.md` or localized equivalents if you use highlights files
 
 After the draft GitHub Release is created, also verify that the release title follows the chosen convention.
 
@@ -139,12 +141,14 @@ The Azure AD app registration must already be authorized in Partner Center for t
 1. Update [WindowThumbWall.csproj](../WindowThumbWall.csproj) `Version`, `AssemblyVersion`, and `FileVersion`.
 2. Update [packaging/AppxManifest.xml](../packaging/AppxManifest.xml) and [packaging/Package.appxmanifest](../packaging/Package.appxmanifest) to the same four-part version.
 3. Add `packaging/release-notes-<version>.md` or the localized `release-notes-ja/en-<version>.md` files if the release has user-visible changes.
-4. Add `packaging/release-highlights-<version>.md` or localized variants if you want explicit highlights instead of fallback content.
-5. Create and push `vX.Y.Z`.
-6. Review the generated GitHub draft release body and rename the release title if you want the plain `X.Y.Z` convention.
-7. Publish the GitHub Release after checking attached ZIP, MSI, and MSIX artifacts.
-8. Confirm that the Store workflow created and committed the submission; if later status details are needed, verify them in Partner Center.
-9. If you are updating the Microsoft Store listing text, copy from the generated Store metadata files.
+4. Update [docs/notification-attention-design.md](notification-attention-design.md) if notification matching or visual attention behavior changed.
+5. Add `packaging/release-highlights-<version>.md` or localized variants if you want explicit highlights instead of fallback content.
+6. Create and push `vX.Y.Z`.
+7. Review the generated GitHub draft release body and rename the release title if you want the plain `X.Y.Z` convention.
+8. Publish the GitHub Release after checking attached ZIP, MSI, and MSIX artifacts.
+9. Confirm that the Store workflow created and committed the submission; if later status details are needed, verify them in Partner Center.
+10. If you are updating the Microsoft Store listing text, copy from the generated Store metadata files.
+11. When packaging or notification behavior changed, run the local MSIX verification checklist in [developer-guide.md](developer-guide.md).
 
 ## Local Test Command
 You can generate the metadata locally before tagging.

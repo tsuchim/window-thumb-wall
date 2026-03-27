@@ -6,6 +6,11 @@ WindowThumbWall releases will be signed using
 [SignPath Foundation](https://signpath.org/) (planned).
 Until signing is integrated, release artifacts are distributed **unsigned**.
 
+Local developer MSIX builds are different from published release artifacts:
+- `packaging/build-msix.ps1` may generate a reusable self-signed certificate for local sideload testing.
+- `packaging/install-msix.ps1` imports that local test certificate into the current user's trust stores for local installation only.
+- That certificate is only for local installation and must not be treated as a release-signing mechanism.
+
 ## Roles
 
 This is a single-maintainer project. All roles are held by **@tsuchim**.
