@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using System.Text;
 
 namespace WindowThumbWall;
 
@@ -75,6 +76,23 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     internal static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern IntPtr OpenProcess(uint processAccess, bool inheritHandle, uint processId);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool QueryFullProcessImageName(
+        IntPtr hProcess,
+        uint dwFlags,
+        StringBuilder lpExeName,
+        ref int lpdwSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool CloseHandle(IntPtr hObject);
+
+    internal const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+
     internal static string GetProcessName(IntPtr hWnd)
     {
         GetWindowThreadProcessId(hWnd, out uint pid);
@@ -113,6 +131,72 @@ internal static class NativeMethods
         catch
         {
             return string.Empty;
+        }
+    }
+
+    internal static string GetProcessImagePath(IntPtr hWnd)
+    {
+        GetWindowThreadProcessId(hWnd, out uint pid);
+        if (pid == 0)
+            return string.Empty;
+
+        IntPtr processHandle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, inheritHandle: false, pid);
+        if (processHandle == IntPtr.Zero)
+            return string.Empty;
+
+        try
+        {
+            StringBuilder buffer = new(1024);
+            int length = buffer.Capacity;
+            return QueryFullProcessImageName(processHandle, 0, buffer, ref length)
+                ? buffer.ToString(0, length)
+                : string.Empty;
+        }
+        finally
+        {
+            CloseHandle(processHandle);
+        }
+    }
+
+    [DllImport("shell32.dll")]
+    private static extern int SHGetPropertyStoreForWindow(
+        IntPtr hwnd,
+        ref Guid iid,
+        [MarshalAs(UnmanagedType.Interface)] out IPropertyStore? propertyStore);
+
+    [DllImport("ole32.dll")]
+    private static extern int PropVariantClear(ref PROPVARIANT propvar);
+
+    private static readonly PROPERTYKEY PKEY_AppUserModel_ID = new(
+        new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"),
+        5);
+
+    internal static string GetWindowAppUserModelId(IntPtr hWnd)
+    {
+        Guid iid = typeof(IPropertyStore).GUID;
+        int hr = SHGetPropertyStoreForWindow(hWnd, ref iid, out IPropertyStore? propertyStore);
+        if (hr != 0 || propertyStore == null)
+            return string.Empty;
+
+        try
+        {
+            PROPERTYKEY key = PKEY_AppUserModel_ID;
+            int valueHr = propertyStore.GetValue(ref key, out PROPVARIANT propVariant);
+            if (valueHr != 0)
+                return string.Empty;
+
+            using (propVariant)
+            {
+                return propVariant.GetString() ?? string.Empty;
+            }
+        }
+        catch
+        {
+            return string.Empty;
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(propertyStore);
         }
     }
 
@@ -241,5 +325,39 @@ internal static class NativeMethods
             return fallback;
 
         return (double)width / height;
+    }
+
+    [ComImport]
+    [Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IPropertyStore
+    {
+        int GetCount(out uint propertyCount);
+        int GetAt(uint propertyIndex, out PROPERTYKEY key);
+        int GetValue(ref PROPERTYKEY key, out PROPVARIANT value);
+        int SetValue(ref PROPERTYKEY key, ref PROPVARIANT value);
+        int Commit();
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct PROPERTYKEY(Guid formatId, uint propertyId)
+    {
+        public readonly Guid fmtid = formatId;
+        public readonly uint pid = propertyId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PROPVARIANT : IDisposable
+    {
+        private ushort vt;
+        private readonly ushort reserved1;
+        private readonly ushort reserved2;
+        private readonly ushort reserved3;
+        private IntPtr pointerValue;
+        private readonly IntPtr extraValue;
+
+        public string? GetString() => vt == 31 ? Marshal.PtrToStringUni(pointerValue) : null;
+
+        public void Dispose() => PropVariantClear(ref this);
     }
 }

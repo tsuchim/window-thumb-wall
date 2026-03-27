@@ -13,6 +13,7 @@ internal sealed class AppState
     public bool IsFullScreen { get; set; }
     public double LeftPanelWidth { get; set; }
     public double AppListHeight { get; set; }
+    public bool EnableOsNotificationAttention { get; set; }
 
     internal static AppState Load()
     {
