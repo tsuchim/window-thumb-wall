@@ -24,6 +24,19 @@ if (-not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 }
 
+function Write-Utf8NoBomFile {
+    param(
+        [string]$Path,
+        [string]$Content
+    )
+
+    [System.IO.File]::WriteAllText(
+        $Path,
+        $Content,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+}
+
 function Get-HighlightsContent {
     param(
         [string]$PreferredPath,
@@ -180,7 +193,7 @@ $highlightsEn
 For privacy details, see [PRIVACY.md]($repositoryUrl/blob/main/PRIVACY.md).
 "@.Trim()
 
-$ghNotes | Out-File -FilePath (Join-Path $OutputDir 'release-notes.md') -Encoding utf8
+Write-Utf8NoBomFile -Path (Join-Path $OutputDir 'release-notes.md') -Content $ghNotes
 
 # --- 2. Store Listing JA (dist/store-listing-ja.md) ---
 $storeJa = @"
@@ -228,7 +241,7 @@ Window Thumb Wall は、複数のウィンドウをライブサムネイルと�
 $highlightsJa
 "@
 
-$storeJa | Out-File -FilePath "$OutputDir/store-listing-ja.md" -Encoding utf8
+Write-Utf8NoBomFile -Path "$OutputDir/store-listing-ja.md" -Content $storeJa
 
 $storeWhatsNewJa = @"
 # Window Thumb Wall - ストア更新内容 (日本語)
@@ -237,7 +250,7 @@ $storeWhatsNewJa = @"
 $highlightsJa
 "@
 
-$storeWhatsNewJa | Out-File -FilePath "$OutputDir/store-whats-new-ja.md" -Encoding utf8
+Write-Utf8NoBomFile -Path "$OutputDir/store-whats-new-ja.md" -Content $storeWhatsNewJa
 
 # --- 3. Store Listing EN (dist/store-listing-en.md) ---
 $storeEn = @"
@@ -287,7 +300,7 @@ window monitor, thumbnail wall, desktop dashboard, live preview, multitasking, p
 $highlightsEn
 "@
 
-$storeEn | Out-File -FilePath "$OutputDir/store-listing-en.md" -Encoding utf8
+Write-Utf8NoBomFile -Path "$OutputDir/store-listing-en.md" -Content $storeEn
 
 $storeWhatsNewEn = @"
 # Window Thumb Wall - Store What's New (English)
@@ -296,6 +309,6 @@ $storeWhatsNewEn = @"
 $highlightsEn
 "@
 
-$storeWhatsNewEn | Out-File -FilePath "$OutputDir/store-whats-new-en.md" -Encoding utf8
+Write-Utf8NoBomFile -Path "$OutputDir/store-whats-new-en.md" -Content $storeWhatsNewEn
 
 Write-Host "Generated release metadata in $OutputDir"

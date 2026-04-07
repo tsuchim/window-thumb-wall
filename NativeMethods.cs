@@ -95,7 +95,6 @@ internal static class NativeMethods
     private static extern int GetCurrentPackageFullName(ref int packageFullNameLength, StringBuilder? packageFullName);
 
     internal const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
-    private const int APPMODEL_ERROR_NO_PACKAGE = 15700;
     private const int ERROR_SUCCESS = 0;
     private const int ERROR_INSUFFICIENT_BUFFER = 122;
 
