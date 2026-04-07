@@ -74,6 +74,25 @@ public sealed class NotificationWindowMatcherTests
     }
 
     [Fact]
+    public void Resolve_ChoosesNarrowestNonEmptyTitleTokenCandidateSet()
+    {
+        NotificationSignal signal = new(
+            AppUserModelId: "OpenAI.Codex_123!App",
+            AppDisplayName: "Codex",
+            NotificationTexts: ["WindowThumbWall session-8842 completed"]);
+
+        NotificationMatchResult result = NotificationWindowMatcher.Resolve(signal,
+        [
+            NewWindow((IntPtr)1, "WindowThumbWall session-8842", "codex", @"C:\Apps\codex.exe", "OpenAI.Codex_123!App"),
+            NewWindow((IntPtr)2, "WindowThumbWall session-9911", "codex", @"C:\Apps\codex.exe", "OpenAI.Codex_123!App"),
+            NewWindow((IntPtr)3, "WindowThumbWall backlog", "codex", @"C:\Apps\codex.exe", "OpenAI.Codex_123!App")
+        ]);
+
+        Assert.Equal(NotificationMatchKind.Unique, result.Kind);
+        Assert.Equal([(IntPtr)1], result.CandidateHandles);
+    }
+
+    [Fact]
     public void Resolve_ReturnsAmbiguous_WhenMultipleSameAppWindowsRemain()
     {
         NotificationSignal signal = new(
@@ -90,6 +109,43 @@ public sealed class NotificationWindowMatcherTests
 
         Assert.Equal(NotificationMatchKind.Ambiguous, result.Kind);
         Assert.Equal([(IntPtr)1, (IntPtr)2], result.CandidateHandles);
+    }
+
+    [Fact]
+    public void Resolve_DoesNotUsePathLikeTitleTokensFromDifferentApps()
+    {
+        NotificationSignal signal = new(
+            AppUserModelId: string.Empty,
+            AppDisplayName: "Codex",
+            NotificationTexts: ["WindowThumbWall release-123 finished"]);
+
+        NotificationMatchResult result = NotificationWindowMatcher.Resolve(signal,
+        [
+            NewWindow((IntPtr)1, "Codex release-123", "codex", @"C:\Apps\codex.exe", ""),
+            NewWindow((IntPtr)2, @"C:\Users\me\Github\WindowThumbWall\packaging", "pwsh", @"C:\Program Files\PowerShell\7\pwsh.exe", "")
+        ]);
+
+        Assert.Equal(NotificationMatchKind.Unique, result.Kind);
+        Assert.Equal([(IntPtr)1], result.CandidateHandles);
+    }
+
+    [Fact]
+    public void Resolve_ReducesByExactExecutableHintOnly()
+    {
+        NotificationSignal signal = new(
+            AppUserModelId: string.Empty,
+            AppDisplayName: "Codex",
+            NotificationTexts: ["Attention required"]);
+
+        NotificationMatchResult result = NotificationWindowMatcher.Resolve(signal,
+        [
+            NewWindow((IntPtr)1, "task alpha", "codex", @"C:\Apps\codex.exe", ""),
+            NewWindow((IntPtr)2, "task beta", "codex-helper", @"C:\Apps\codex-helper.exe", ""),
+            NewWindow((IntPtr)3, "task gamma", "mycodex", @"C:\Apps\mycodex.exe", "")
+        ]);
+
+        Assert.Equal(NotificationMatchKind.Unique, result.Kind);
+        Assert.Equal([(IntPtr)1], result.CandidateHandles);
     }
 
     [Fact]

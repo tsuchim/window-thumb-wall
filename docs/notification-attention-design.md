@@ -5,7 +5,7 @@ This document describes how WindowThumbWall expands attention signaling beyond t
 ## Goals
 - Keep the current `HSHELL_FLASH` path as the exact, HWND-based attention signal.
 - Add Windows notification monitoring as a secondary signal source.
-- Only react to newly added Windows toast notifications.
+- Only react to newly added or updated Windows toast notifications.
 - Resolve a notification to a single window when the evidence is strong enough.
 - If a notification cannot be resolved to a single monitored window in the same source app, highlight every monitored candidate in that app instead.
 - Clear the notification-derived highlight when any candidate window is activated.
@@ -104,9 +104,9 @@ If an ambiguous notification belongs to an app that already has any monitored wi
 ## Clearing Rules
 - Taskbar flash clears on foreground activation, same as before.
 - Notification-derived attention groups clear when any candidate window in that group becomes active.
-- Only notifications added after the listener is initialized create new attention groups.
-- Existing toast notifications are recorded as baseline state and are not replayed into the wall.
-- Ambiguous flash suppression is evaluated only when a newly added notification is processed.
+- Only notifications added or updated after the listener is initialized create or refresh attention groups.
+- Existing toast notifications are recorded as baseline state and are not replayed into the wall until their contents change.
+- Ambiguous flash suppression is evaluated when a newly added or updated notification is processed.
 - Unmonitored windows do not participate in notification matching.
 
 ## Packaging Requirements

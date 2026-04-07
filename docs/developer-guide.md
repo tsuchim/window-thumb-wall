@@ -118,7 +118,7 @@ Use the checklist below when changing local packaging, install scripts, app iden
 3. Trigger a Windows notification that leaves multiple monitored candidates and confirm those slots flash orange.
 4. Confirm only monitored slots participate in notification matching.
 5. Confirm a notification without usable source-app metadata does not render red or orange attention.
-6. Confirm notifications that were already present before the listener was enabled do not get replayed into the wall.
+6. Confirm notifications that were already present before the listener was enabled do not get replayed into the wall until they change.
 7. Confirm activating one of the candidate windows clears the related attention state.
 8. Confirm an ambiguous notification does not render orange when the same source app already has any monitored window flashing red from the taskbar.
 9. Confirm notification text is matched against title tokens by exact token equality, not substring matching.

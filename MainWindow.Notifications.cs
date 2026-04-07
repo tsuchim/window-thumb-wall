@@ -36,6 +36,7 @@ public partial class MainWindow
 
     private readonly Dictionary<uint, NotificationAttentionGroup> _notificationAttentionGroups = [];
     private readonly HashSet<uint> _knownNotificationIds = [];
+    private readonly Dictionary<uint, string> _knownNotificationFingerprints = [];
     private readonly HashSet<IntPtr> _notificationResolvedWindows = [];
     private readonly HashSet<IntPtr> _notificationAmbiguousWindows = [];
 
@@ -73,6 +74,7 @@ public partial class MainWindow
         _notificationSyncQueued = false;
         _notificationSyncInProgress = false;
         _knownNotificationIds.Clear();
+        _knownNotificationFingerprints.Clear();
         _notificationAttentionGroups.Clear();
         _notificationResolvedWindows.Clear();
         _notificationAmbiguousWindows.Clear();
@@ -112,8 +114,13 @@ public partial class MainWindow
             IReadOnlyList<UserNotification> currentNotifications =
                 await _notificationListener.GetNotificationsAsync(NotificationKinds.Toast);
             _knownNotificationIds.Clear();
+            _knownNotificationFingerprints.Clear();
             foreach (UserNotification notification in currentNotifications)
+            {
                 _knownNotificationIds.Add(notification.Id);
+                NotificationSignal signal = BuildNotificationSignal(notification, out _);
+                _knownNotificationFingerprints[notification.Id] = CreateNotificationFingerprint(signal);
+            }
 
             _notificationAttentionGroups.Clear();
             if (currentNotifications.Count > 0)
@@ -183,28 +190,47 @@ public partial class MainWindow
                     .Where(id => !currentIds.Contains(id))
                     .ToArray();
                 foreach (uint removedId in removedIds)
+                {
                     _notificationAttentionGroups.Remove(removedId);
+                    _knownNotificationFingerprints.Remove(removedId);
+                }
 
-                List<UserNotification> addedNotifications = notifications
-                    .Where(notification => !_knownNotificationIds.Contains(notification.Id))
-                    .ToList();
+                List<(UserNotification Notification, NotificationSignal Signal)> changedNotifications = [];
+                foreach (UserNotification notification in notifications)
+                {
+                    NotificationSignal signal = BuildNotificationSignal(notification, out _);
+                    string fingerprint = CreateNotificationFingerprint(signal);
+                    if (!_knownNotificationFingerprints.TryGetValue(notification.Id, out string? knownFingerprint)
+                        || !string.Equals(knownFingerprint, fingerprint, StringComparison.Ordinal))
+                    {
+                        changedNotifications.Add((notification, signal));
+                    }
 
-                if (addedNotifications.Count > 0)
+                    _knownNotificationFingerprints[notification.Id] = fingerprint;
+                }
+
+                if (changedNotifications.Count > 0)
                 {
                     List<NotificationWindowCandidate> candidates = CaptureMonitoredNotificationWindowCandidates();
-                    AppendNotificationSnapshot("sync-added", addedNotifications, candidates);
-                    foreach (UserNotification notification in addedNotifications)
-                        AddNotificationAttentionGroup(notification, candidates);
+                    AppendNotificationSnapshot(
+                        "sync-delta",
+                        changedNotifications.Select(static entry => entry.Notification).ToArray(),
+                        candidates);
+                    foreach ((UserNotification notification, NotificationSignal signal) in changedNotifications)
+                    {
+                        _notificationAttentionGroups.Remove(notification.Id);
+                        AddNotificationAttentionGroup(notification, signal, candidates);
+                    }
                 }
 
                 if (notifications.Count == 0)
                 {
                     AppendNotificationDiagnostic("Notification sync completed with zero current toast notifications.");
                 }
-                else if (addedNotifications.Count == 0)
+                else if (changedNotifications.Count == 0)
                 {
                     AppendNotificationDiagnostic(
-                        $"Notification sync observed no new toast notifications. current={notifications.Count} removed={removedIds.Length}");
+                        $"Notification sync observed no new or updated toast notifications. current={notifications.Count} removed={removedIds.Length}");
                 }
 
                 if (removedIds.Length > 0)
@@ -249,9 +275,9 @@ public partial class MainWindow
 
     private void AddNotificationAttentionGroup(
         UserNotification notification,
+        NotificationSignal signal,
         IReadOnlyList<NotificationWindowCandidate> candidates)
     {
-        NotificationSignal signal = BuildNotificationSignal(notification, out _);
         NotificationMatchResult result = NotificationWindowMatcher.Resolve(signal, candidates);
         if (result.Kind == NotificationMatchKind.None || result.CandidateHandles.Count == 0)
             return;
@@ -381,6 +407,16 @@ public partial class MainWindow
     }
 
     private static string FormatHandle(IntPtr handle) => $"0x{handle.ToInt64():X}";
+
+    private static string CreateNotificationFingerprint(NotificationSignal signal)
+    {
+        ArgumentNullException.ThrowIfNull(signal);
+        return string.Join(
+            "\u001F",
+            signal.AppUserModelId,
+            signal.AppDisplayName,
+            string.Join("\u001E", signal.NotificationTexts));
+    }
 
     private static bool ShouldWriteNotificationDiagnostics()
     {
