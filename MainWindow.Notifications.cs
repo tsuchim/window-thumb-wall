@@ -36,7 +36,6 @@ public partial class MainWindow
 
     private readonly Dictionary<uint, NotificationAttentionGroup> _notificationAttentionGroups = [];
     private readonly HashSet<uint> _knownNotificationIds = [];
-    private readonly HashSet<uint> _notificationSuppressedByFlash = [];
     private readonly HashSet<IntPtr> _notificationResolvedWindows = [];
     private readonly HashSet<IntPtr> _notificationAmbiguousWindows = [];
 
@@ -74,7 +73,6 @@ public partial class MainWindow
         _notificationSyncQueued = false;
         _notificationSyncInProgress = false;
         _knownNotificationIds.Clear();
-        _notificationSuppressedByFlash.Clear();
         _notificationAttentionGroups.Clear();
         _notificationResolvedWindows.Clear();
         _notificationAmbiguousWindows.Clear();
@@ -116,15 +114,14 @@ public partial class MainWindow
             _knownNotificationIds.Clear();
             foreach (UserNotification notification in currentNotifications)
                 _knownNotificationIds.Add(notification.Id);
-            _notificationSuppressedByFlash.RemoveWhere(id => !_knownNotificationIds.Contains(id));
 
             _notificationAttentionGroups.Clear();
             if (currentNotifications.Count > 0)
             {
-                List<NotificationWindowCandidate> candidates = CaptureNotificationWindowCandidates();
-                AppendNotificationSnapshot("initialize", currentNotifications, candidates);
-                foreach (UserNotification notification in currentNotifications)
-                    AddNotificationAttentionGroup(notification, candidates);
+                List<NotificationWindowCandidate> candidates = CaptureMonitoredNotificationWindowCandidates();
+                AppendNotificationSnapshot("initialize-baseline", currentNotifications, candidates);
+                AppendNotificationDiagnostic(
+                    $"Notification initialization recorded {currentNotifications.Count} existing toast notification(s) without creating attention groups.");
             }
             else
             {
@@ -182,19 +179,38 @@ public partial class MainWindow
                 IReadOnlyList<UserNotification> notifications =
                     await _notificationListener.GetNotificationsAsync(NotificationKinds.Toast);
                 HashSet<uint> currentIds = notifications.Select(static notification => notification.Id).ToHashSet();
-                _notificationSuppressedByFlash.RemoveWhere(id => !currentIds.Contains(id));
+                uint[] removedIds = _knownNotificationIds
+                    .Where(id => !currentIds.Contains(id))
+                    .ToArray();
+                foreach (uint removedId in removedIds)
+                    _notificationAttentionGroups.Remove(removedId);
 
-                _notificationAttentionGroups.Clear();
-                if (notifications.Count > 0)
+                List<UserNotification> addedNotifications = notifications
+                    .Where(notification => !_knownNotificationIds.Contains(notification.Id))
+                    .ToList();
+
+                if (addedNotifications.Count > 0)
                 {
-                    List<NotificationWindowCandidate> candidates = CaptureNotificationWindowCandidates();
-                    AppendNotificationSnapshot("sync", notifications, candidates);
-                    foreach (UserNotification notification in notifications)
+                    List<NotificationWindowCandidate> candidates = CaptureMonitoredNotificationWindowCandidates();
+                    AppendNotificationSnapshot("sync-added", addedNotifications, candidates);
+                    foreach (UserNotification notification in addedNotifications)
                         AddNotificationAttentionGroup(notification, candidates);
                 }
-                else
+
+                if (notifications.Count == 0)
                 {
                     AppendNotificationDiagnostic("Notification sync completed with zero current toast notifications.");
+                }
+                else if (addedNotifications.Count == 0)
+                {
+                    AppendNotificationDiagnostic(
+                        $"Notification sync observed no new toast notifications. current={notifications.Count} removed={removedIds.Length}");
+                }
+
+                if (removedIds.Length > 0)
+                {
+                    AppendNotificationDiagnostic(
+                        $"Notification sync removed attention groups for notification ids [{string.Join(", ", removedIds)}].");
                 }
 
                 _knownNotificationIds.Clear();
@@ -215,24 +231,18 @@ public partial class MainWindow
         }
     }
 
-    private List<NotificationWindowCandidate> CaptureNotificationWindowCandidates()
+    private List<NotificationWindowCandidate> CaptureMonitoredNotificationWindowCandidates()
     {
         List<NotificationWindowCandidate> candidates = [];
-        NativeMethods.EnumWindows((hWnd, _) =>
+        foreach (ThumbnailSlot slot in _slots.Where(static slot => slot.IsOccupied))
         {
-            if (hWnd == _mainHwnd)
-                return true;
-            if (!NativeMethods.IsAltTabWindow(hWnd))
-                return true;
-
             candidates.Add(new NotificationWindowCandidate(
-                Handle: hWnd,
-                Title: NativeMethods.GetWindowTitle(hWnd),
-                ProcessName: NativeMethods.GetProcessName(hWnd),
-                ExecutablePath: NativeMethods.GetProcessImagePath(hWnd),
-                AppUserModelId: NativeMethods.GetWindowAppUserModelId(hWnd)));
-            return true;
-        }, IntPtr.Zero);
+                Handle: slot.SourceHwnd,
+                Title: NativeMethods.GetWindowTitle(slot.SourceHwnd),
+                ProcessName: NativeMethods.GetProcessName(slot.SourceHwnd),
+                ExecutablePath: NativeMethods.GetProcessImagePath(slot.SourceHwnd),
+                AppUserModelId: NativeMethods.GetWindowAppUserModelId(slot.SourceHwnd)));
+        }
 
         return candidates;
     }
@@ -244,30 +254,19 @@ public partial class MainWindow
         NotificationSignal signal = BuildNotificationSignal(notification, out _);
         NotificationMatchResult result = NotificationWindowMatcher.Resolve(signal, candidates);
         if (result.Kind == NotificationMatchKind.None || result.CandidateHandles.Count == 0)
-        {
-            _notificationSuppressedByFlash.Remove(notification.Id);
             return;
-        }
 
         if (result.Kind == NotificationMatchKind.Ambiguous)
         {
-            if (_notificationSuppressedByFlash.Contains(notification.Id))
-                return;
-
             if (NotificationAttentionPolicy.ShouldSuppressAmbiguousNotificationDueToFlash(
                     signal,
                     candidates,
                     _flashingWindows))
             {
-                _notificationSuppressedByFlash.Add(notification.Id);
                 AppendNotificationDiagnostic(
                     $"Notification id={notification.Id} ambiguous attention suppressed because the same app already has an active flash signal.");
                 return;
             }
-        }
-        else
-        {
-            _notificationSuppressedByFlash.Remove(notification.Id);
         }
 
         AttentionVisualState state = result.Kind == NotificationMatchKind.Unique
