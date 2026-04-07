@@ -96,6 +96,8 @@ internal static class NativeMethods
 
     internal const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
     private const int APPMODEL_ERROR_NO_PACKAGE = 15700;
+    private const int ERROR_SUCCESS = 0;
+    private const int ERROR_INSUFFICIENT_BUFFER = 122;
 
     internal static string GetProcessName(IntPtr hWnd)
     {
@@ -164,9 +166,20 @@ internal static class NativeMethods
 
     internal static bool HasCurrentPackageIdentity()
     {
-        int length = 0;
-        int result = GetCurrentPackageFullName(ref length, null);
-        return result != APPMODEL_ERROR_NO_PACKAGE;
+        try
+        {
+            int length = 0;
+            int result = GetCurrentPackageFullName(ref length, null);
+            return result == ERROR_SUCCESS || result == ERROR_INSUFFICIENT_BUFFER;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return false;
+        }
+        catch (DllNotFoundException)
+        {
+            return false;
+        }
     }
 
     [DllImport("shell32.dll")]

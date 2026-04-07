@@ -46,7 +46,7 @@ WindowThumbWall is a Windows desktop app for building a live thumbnail wall from
 3. Click a thumbnail to bring the original window to the foreground.
 4. Right-click a thumbnail to remove it.
 5. When a monitored app flashes on the taskbar or a Windows notification resolves to it uniquely, its thumbnail border flashes red in the wall.
-6. When notification matching leaves several monitored candidates, those candidate borders flash orange.
+6. When notification matching leaves several monitored candidates, those candidate borders flash orange, except candidates from an app that is already flashing red from a taskbar signal.
 7. The cell whose source window is currently active shows a steady white border.
 8. Press Enter to toggle fullscreen.
 9. Press Esc to leave fullscreen.

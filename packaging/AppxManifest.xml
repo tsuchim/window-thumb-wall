@@ -7,7 +7,7 @@
 
   <Identity Name="tsuchim.WindowThumbWall"
             Publisher="CN=tsuchim"
-            Version="0.6.6.0"
+            Version="0.6.7.0"
             ProcessorArchitecture="x64" />
 
   <Properties>
