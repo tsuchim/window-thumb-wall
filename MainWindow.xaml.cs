@@ -57,6 +57,7 @@ public partial class MainWindow : Window
     private Point _appListDragStartPoint;
     private string? _appListDragSourceProcessName;
     private int _autoAddMaintenanceTick;
+    private bool _notificationAttentionRequested;
     private bool _notificationAttentionEnabled;
 
     private uint _shellHookMsgId;
@@ -93,7 +94,8 @@ public partial class MainWindow : Window
 
         // Restore window geometry before the window is shown.
         _pendingRestore = AppState.Load();
-        _notificationAttentionEnabled = _pendingRestore.EnableOsNotificationAttention;
+        _notificationAttentionRequested = _pendingRestore.EnableOsNotificationAttention;
+        _notificationAttentionEnabled = _notificationAttentionRequested && SupportsNotificationAttentionRuntime();
         if (_pendingRestore.Geometry is { Width: > 0, Height: > 0 } geo)
         {
             WindowStartupLocation = WindowStartupLocation.Manual;
@@ -106,6 +108,7 @@ public partial class MainWindow : Window
         }
 
         _timer.Tick += Timer_Tick;
+        InitializeNotificationFollowUpTimer();
         _stateSaveTimer.Tick += StateSaveTimer_Tick;
         _thumbnailSettleTimer.Tick += ThumbnailSettleTimer_Tick;
         _thumbnailThrottleTimer.Tick += ThumbnailThrottleTimer_Tick;
@@ -152,6 +155,7 @@ public partial class MainWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         _timer.Stop();
+        _notificationFollowUpTimer.Stop();
         _stateSaveTimer.Stop();
         _thumbnailSettleTimer.Stop();
         _thumbnailThrottleTimer.Stop();
@@ -212,7 +216,7 @@ public partial class MainWindow : Window
                 _isFullScreen ? _savedLeftColWidth : LeftColumnDefinition.Width,
                 LeftPanel.ActualWidth),
             AppListHeight = GetPersistedLength(AppListRowDefinition.Height, AppList.ActualHeight),
-            EnableOsNotificationAttention = _notificationAttentionEnabled
+            EnableOsNotificationAttention = _notificationAttentionRequested
         };
 
         foreach (var slot in _slots)

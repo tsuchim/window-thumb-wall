@@ -12,6 +12,7 @@ public sealed class SettingsWindowTests
         {
             SettingsWindow window = new(
                 osNotificationAttentionEnabled: true,
+                notificationAttentionSupported: true,
                 _ => { });
 
             CheckBox checkBox = FindLogicalDescendant<CheckBox>(window.Content);
@@ -30,6 +31,7 @@ public sealed class SettingsWindowTests
             List<bool> observed = [];
             SettingsWindow window = new(
                 osNotificationAttentionEnabled: false,
+                notificationAttentionSupported: true,
                 enabled => observed.Add(enabled));
 
             CheckBox checkBox = FindLogicalDescendant<CheckBox>(window.Content);

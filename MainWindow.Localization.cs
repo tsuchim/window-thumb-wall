@@ -48,7 +48,8 @@ public partial class MainWindow
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
     {
         var settingsWindow = new SettingsWindow(
-            _notificationAttentionEnabled,
+            _notificationAttentionRequested,
+            SupportsNotificationAttentionRuntime(),
             enabled => SetNotificationAttentionEnabled(enabled))
         {
             Owner = this

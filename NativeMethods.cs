@@ -91,7 +91,11 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool CloseHandle(IntPtr hObject);
 
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int GetCurrentPackageFullName(ref int packageFullNameLength, StringBuilder? packageFullName);
+
     internal const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+    private const int APPMODEL_ERROR_NO_PACKAGE = 15700;
 
     internal static string GetProcessName(IntPtr hWnd)
     {
@@ -156,6 +160,13 @@ internal static class NativeMethods
         {
             CloseHandle(processHandle);
         }
+    }
+
+    internal static bool HasCurrentPackageIdentity()
+    {
+        int length = 0;
+        int result = GetCurrentPackageFullName(ref length, null);
+        return result != APPMODEL_ERROR_NO_PACKAGE;
     }
 
     [DllImport("shell32.dll")]

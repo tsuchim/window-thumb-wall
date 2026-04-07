@@ -46,6 +46,8 @@ dotnet run --project WindowThumbWall.csproj
 ```
 
 Use the MSIX path when you need to verify packaged app identity or OS notification listener behavior. Use `dotnet run` for ordinary local UI work.
+If you start the unpackaged `dotnet run` / `bin\Debug` build, the Settings window now keeps `Reflect OS notifications` disabled and explains that notification attention requires the installed MSIX runtime.
+The installed MSIX build does not use constant notification polling; it scans immediately when notification-change events arrive and keeps a 5-second follow-up reconciliation window for near-term toast updates.
 
 ## Build And Test Split
 Use the supported command split below when working locally.
@@ -120,13 +122,15 @@ Use the checklist below when changing local packaging, install scripts, app iden
 5. Confirm a notification without usable source-app metadata does not render red or orange attention.
 6. Confirm notifications that were already present before the listener was enabled do not get replayed into the wall until they change.
 7. Confirm activating one of the candidate windows clears the related attention state.
-8. Confirm an ambiguous notification does not render orange when the same source app already has any monitored window flashing red from the taskbar.
-9. Confirm notification text is matched against title tokens by exact token equality, not substring matching.
-10. Confirm `AppUserModelId` matching uses exact equality only.
-11. Confirm app-display or identity hints reduce candidates only through process name or executable base name, not full path fragments.
-12. Confirm the resolver picks the narrowest non-empty candidate set instead of the first token that matches anything.
-13. Confirm a notification with source-app metadata does not jump to a different app's window only because a generic title token happened to match.
-14. Turn `Reflect OS notifications` off in the Settings window during runtime and confirm notification-derived red/orange borders clear immediately.
+8. Confirm an unchanged notification that was cleared by activating its candidate window does not light up again by itself.
+9. Confirm an ambiguous notification does not render orange when the same source app already has any monitored window flashing red from the taskbar.
+10. Confirm notification text is matched against title tokens by exact token equality, not substring matching.
+11. Confirm `AppUserModelId` matching uses exact equality only.
+12. Confirm app-display or identity hints reduce candidates only through process name or executable base name, not full path fragments.
+13. Confirm the resolver picks the narrowest non-empty candidate set instead of the first token that matches anything.
+14. Confirm a notification with source-app metadata does not jump to a different app's window only because a generic title token happened to match.
+15. Turn `Reflect OS notifications` off in the Settings window during runtime and confirm notification-derived red/orange borders clear immediately.
+16. Confirm an in-place update to the same toast shortly after the notification event is still reflected during the 5-second follow-up reconciliation window.
 
 ### Window Chrome And Shell Integration
 1. Open the shortcut guide and confirm the version label is shown at the lower left.

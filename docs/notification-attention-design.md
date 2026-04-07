@@ -15,6 +15,7 @@ This document describes how WindowThumbWall expands attention signaling beyond t
 - Default: off
 - Persistence: stored alongside the normal app state in the same `state.json`
 - UI: changed from the main pane through the dedicated Settings window opened by the `Settings` button under `Fullscreen`
+- Runtime requirement: the feature is available only when WindowThumbWall runs with packaged app identity, for example from the installed MSIX build
 
 ## Design Principles
 - Treat notification matching as source-app-scoped candidate narrowing, not fallback expansion.
@@ -38,6 +39,7 @@ This document describes how WindowThumbWall expands attention signaling beyond t
 - Windows notification listener:
   - Source: `UserNotificationListener`
   - Precision: app metadata plus notification text, not HWND
+  - Collection model: listener-triggered sync plus a 5-second follow-up reconciliation window against the current toast list
   - Visual:
     - red flashing border for a unique match
     - orange flashing border for ambiguous monitored candidates
@@ -104,9 +106,13 @@ If an ambiguous notification belongs to an app that already has any monitored wi
 ## Clearing Rules
 - Taskbar flash clears on foreground activation, same as before.
 - Notification-derived attention groups clear when any candidate window in that group becomes active.
+- After the user clears a notification-derived attention group by activating a candidate window, that same unchanged toast does not light up again until it changes or disappears.
 - Only notifications added or updated after the listener is initialized create or refresh attention groups.
-- Existing toast notifications are recorded as baseline state and are not replayed into the wall until their contents change.
+- Existing toast notifications are recorded as baseline state and are not replayed into the wall until their contents or creation time change.
+- Notifications first seen after initialization remain eligible for re-evaluation on later syncs until they either resolve into an attention group or disappear from the current toast list.
 - Ambiguous flash suppression is evaluated when a newly added or updated notification is processed.
+- Because `UserNotificationChangedKind` only reports add/remove events, a notification event opens a 5-second follow-up reconciliation window to catch near-term in-place updates to an existing toast without constant polling.
+- Outside that event-driven follow-up window, the installed MSIX build does not continuously poll the toast list.
 - Unmonitored windows do not participate in notification matching.
 
 ## Packaging Requirements

@@ -1,7 +1,9 @@
 using System.IO;
 using System.Text;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Windows.Foundation.Metadata;
 using Windows.UI.Notifications;
 using Windows.UI.Notifications.Management;
@@ -21,6 +23,36 @@ internal sealed record NotificationAttentionGroup(
     AttentionVisualState VisualState,
     IReadOnlyList<IntPtr> CandidateHandles);
 
+internal sealed record NotificationObservation(
+    DateTimeOffset CreationTime,
+    string Fingerprint,
+    bool IsBaseline);
+
+internal static class NotificationObservationPolicy
+{
+    internal static bool ShouldEvaluate(
+        uint notificationId,
+        NotificationObservation currentObservation,
+        IReadOnlyDictionary<uint, NotificationObservation> knownObservations,
+        IReadOnlyDictionary<uint, NotificationAttentionGroup> attentionGroups,
+        IReadOnlySet<uint> dismissedNotificationIds)
+    {
+        if (dismissedNotificationIds.Contains(notificationId))
+            return false;
+
+        if (!knownObservations.TryGetValue(notificationId, out NotificationObservation? knownObservation))
+            return true;
+
+        bool changed =
+            knownObservation.CreationTime != currentObservation.CreationTime ||
+            !string.Equals(knownObservation.Fingerprint, currentObservation.Fingerprint, StringComparison.Ordinal);
+        if (changed)
+            return true;
+
+        return !knownObservation.IsBaseline && !attentionGroups.ContainsKey(notificationId);
+    }
+}
+
 public partial class MainWindow
 {
     private static readonly Color AttentionRed = Colors.Red;
@@ -28,6 +60,7 @@ public partial class MainWindow
     private const string NotificationDiagnosticsEnvironmentVariable = "WINDOWTHUMBWALL_NOTIFICATION_DIAGNOSTICS";
     private const int NotificationDiagnosticsMaxCharacters = 160;
     private const long NotificationDiagnosticsMaxBytes = 256 * 1024;
+    private const int NotificationFollowUpSyncCount = 5;
     private static readonly string NotificationDiagnosticsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "WindowThumbWall",
@@ -35,23 +68,47 @@ public partial class MainWindow
         "notification-attention.log");
 
     private readonly Dictionary<uint, NotificationAttentionGroup> _notificationAttentionGroups = [];
-    private readonly HashSet<uint> _knownNotificationIds = [];
-    private readonly Dictionary<uint, string> _knownNotificationFingerprints = [];
+    private readonly Dictionary<uint, NotificationObservation> _notificationObservations = [];
+    private readonly HashSet<uint> _dismissedNotificationIds = [];
     private readonly HashSet<IntPtr> _notificationResolvedWindows = [];
     private readonly HashSet<IntPtr> _notificationAmbiguousWindows = [];
+    private readonly DispatcherTimer _notificationFollowUpTimer = new() { Interval = TimeSpan.FromSeconds(1) };
 
     private UserNotificationListener? _notificationListener;
     private bool _notificationListenerInitialized;
     private bool _notificationSyncInProgress;
     private bool _notificationSyncQueued;
+    private int _notificationFollowUpRemainingTicks;
+
+    private bool SupportsNotificationAttentionRuntime() => NativeMethods.HasCurrentPackageIdentity();
+
+    private void InitializeNotificationFollowUpTimer() =>
+        _notificationFollowUpTimer.Tick += NotificationFollowUpTimer_Tick;
 
     private void SetNotificationAttentionEnabled(bool enabled)
     {
-        if (_notificationAttentionEnabled == enabled)
-            return;
+        _notificationAttentionRequested = enabled;
 
-        _notificationAttentionEnabled = enabled;
-        if (enabled)
+        if (enabled && !SupportsNotificationAttentionRuntime())
+        {
+            MessageBox.Show(
+                this,
+                LocalizedText.Get("setting.osNotifications.requiresPackage.message"),
+                LocalizedText.Get("setting.osNotifications.requiresPackage.title"),
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            enabled = false;
+        }
+
+        bool runtimeEnabled = enabled && SupportsNotificationAttentionRuntime();
+        if (_notificationAttentionEnabled == runtimeEnabled)
+        {
+            RequestStateSave();
+            return;
+        }
+
+        _notificationAttentionEnabled = runtimeEnabled;
+        if (runtimeEnabled)
         {
             AppendNotificationDiagnostic("OS notification attention enabled.");
             if (IsLoaded)
@@ -73,8 +130,10 @@ public partial class MainWindow
         _notificationListenerInitialized = false;
         _notificationSyncQueued = false;
         _notificationSyncInProgress = false;
-        _knownNotificationIds.Clear();
-        _knownNotificationFingerprints.Clear();
+        _notificationFollowUpRemainingTicks = 0;
+        _notificationFollowUpTimer.Stop();
+        _notificationObservations.Clear();
+        _dismissedNotificationIds.Clear();
         _notificationAttentionGroups.Clear();
         _notificationResolvedWindows.Clear();
         _notificationAmbiguousWindows.Clear();
@@ -97,6 +156,12 @@ public partial class MainWindow
             return;
         }
 
+        if (!SupportsNotificationAttentionRuntime())
+        {
+            AppendNotificationDiagnostic("Notification listener requires packaged app identity for this run.");
+            return;
+        }
+
         try
         {
             _notificationListener = UserNotificationListener.Current;
@@ -113,13 +178,12 @@ public partial class MainWindow
 
             IReadOnlyList<UserNotification> currentNotifications =
                 await _notificationListener.GetNotificationsAsync(NotificationKinds.Toast);
-            _knownNotificationIds.Clear();
-            _knownNotificationFingerprints.Clear();
+            _notificationObservations.Clear();
+            _dismissedNotificationIds.Clear();
             foreach (UserNotification notification in currentNotifications)
             {
-                _knownNotificationIds.Add(notification.Id);
                 NotificationSignal signal = BuildNotificationSignal(notification, out _);
-                _knownNotificationFingerprints[notification.Id] = CreateNotificationFingerprint(signal);
+                _notificationObservations[notification.Id] = CreateNotificationObservation(notification, signal, isBaseline: true);
             }
 
             _notificationAttentionGroups.Clear();
@@ -159,7 +223,31 @@ public partial class MainWindow
         if (!_notificationAttentionEnabled)
             return;
 
-        Dispatcher.BeginInvoke(async () => await SyncNotificationAttentionAsync());
+        ScheduleNotificationFollowUpSync();
+        QueueNotificationAttentionSync();
+    }
+
+    private void NotificationFollowUpTimer_Tick(object? sender, EventArgs e)
+    {
+        if (!_notificationAttentionEnabled || _notificationListener == null || _notificationFollowUpRemainingTicks <= 0)
+        {
+            _notificationFollowUpTimer.Stop();
+            _notificationFollowUpRemainingTicks = 0;
+            return;
+        }
+
+        _notificationFollowUpRemainingTicks--;
+        QueueNotificationAttentionSync();
+
+        if (_notificationFollowUpRemainingTicks <= 0)
+            _notificationFollowUpTimer.Stop();
+    }
+
+    private void ScheduleNotificationFollowUpSync()
+    {
+        _notificationFollowUpRemainingTicks = NotificationFollowUpSyncCount;
+        if (!_notificationFollowUpTimer.IsEnabled)
+            _notificationFollowUpTimer.Start();
     }
 
     private async Task SyncNotificationAttentionAsync()
@@ -186,27 +274,47 @@ public partial class MainWindow
                 IReadOnlyList<UserNotification> notifications =
                     await _notificationListener.GetNotificationsAsync(NotificationKinds.Toast);
                 HashSet<uint> currentIds = notifications.Select(static notification => notification.Id).ToHashSet();
-                uint[] removedIds = _knownNotificationIds
+                uint[] removedIds = _notificationObservations.Keys
                     .Where(id => !currentIds.Contains(id))
                     .ToArray();
                 foreach (uint removedId in removedIds)
                 {
                     _notificationAttentionGroups.Remove(removedId);
-                    _knownNotificationFingerprints.Remove(removedId);
+                    _notificationObservations.Remove(removedId);
+                    _dismissedNotificationIds.Remove(removedId);
                 }
 
                 List<(UserNotification Notification, NotificationSignal Signal)> changedNotifications = [];
                 foreach (UserNotification notification in notifications)
                 {
                     NotificationSignal signal = BuildNotificationSignal(notification, out _);
-                    string fingerprint = CreateNotificationFingerprint(signal);
-                    if (!_knownNotificationFingerprints.TryGetValue(notification.Id, out string? knownFingerprint)
-                        || !string.Equals(knownFingerprint, fingerprint, StringComparison.Ordinal))
+                    NotificationObservation currentObservation;
+                    if (_notificationObservations.TryGetValue(notification.Id, out NotificationObservation? knownObservation))
                     {
-                        changedNotifications.Add((notification, signal));
+                        currentObservation = CreateNotificationObservation(
+                            notification,
+                            signal,
+                            isBaseline: knownObservation.IsBaseline);
+
+                        if (knownObservation.CreationTime != currentObservation.CreationTime ||
+                            !string.Equals(knownObservation.Fingerprint, currentObservation.Fingerprint, StringComparison.Ordinal))
+                        {
+                            _dismissedNotificationIds.Remove(notification.Id);
+                        }
+                    }
+                    else
+                    {
+                        currentObservation = CreateNotificationObservation(notification, signal, isBaseline: false);
+                        _dismissedNotificationIds.Remove(notification.Id);
                     }
 
-                    _knownNotificationFingerprints[notification.Id] = fingerprint;
+                    if (ShouldEvaluateNotification(notification.Id, currentObservation))
+                    {
+                        changedNotifications.Add((notification, signal));
+                        currentObservation = currentObservation with { IsBaseline = false };
+                    }
+
+                    _notificationObservations[notification.Id] = currentObservation;
                 }
 
                 if (changedNotifications.Count > 0)
@@ -238,10 +346,6 @@ public partial class MainWindow
                     AppendNotificationDiagnostic(
                         $"Notification sync removed attention groups for notification ids [{string.Join(", ", removedIds)}].");
                 }
-
-                _knownNotificationIds.Clear();
-                foreach (uint currentId in currentIds)
-                    _knownNotificationIds.Add(currentId);
 
                 RebuildNotificationAttentionIndex();
             }
@@ -418,6 +522,23 @@ public partial class MainWindow
             string.Join("\u001E", signal.NotificationTexts));
     }
 
+    private static NotificationObservation CreateNotificationObservation(
+        UserNotification notification,
+        NotificationSignal signal,
+        bool isBaseline) =>
+        new(
+            notification.CreationTime,
+            CreateNotificationFingerprint(signal),
+            isBaseline);
+
+    private bool ShouldEvaluateNotification(uint notificationId, NotificationObservation currentObservation)
+        => NotificationObservationPolicy.ShouldEvaluate(
+            notificationId,
+            currentObservation,
+            _notificationObservations,
+            _notificationAttentionGroups,
+            _dismissedNotificationIds);
+
     private static bool ShouldWriteNotificationDiagnostics()
     {
         string? value = Environment.GetEnvironmentVariable(NotificationDiagnosticsEnvironmentVariable);
@@ -497,7 +618,10 @@ public partial class MainWindow
             return;
 
         foreach (uint groupId in groupsToClear)
+        {
             _notificationAttentionGroups.Remove(groupId);
+            _dismissedNotificationIds.Add(groupId);
+        }
 
         RebuildNotificationAttentionIndex();
     }
