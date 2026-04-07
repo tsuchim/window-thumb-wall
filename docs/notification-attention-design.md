@@ -85,15 +85,22 @@ App display name is only a reduction hint and must not create substring matches 
   - or notification matching resolved that notification to one monitored window
 - Orange:
   - notification matching left multiple monitored candidates
+  - but only when the same source app does not already have a monitored window flashing red from the taskbar
+- White:
+  - the source window for that monitored slot is the current foreground window
+  - this border does not flash
+  - red and orange attention states take priority over white
 - No border:
   - no active taskbar flash
   - and no active notification-derived attention group touching that slot
 
 If a monitored window is both taskbar-flashing and notification-matched, red wins.
+If an ambiguous notification belongs to an app that already has any monitored window flashing red, suppress the orange notification border for that notification instead of rendering both signals.
 
 ## Clearing Rules
 - Taskbar flash clears on foreground activation, same as before.
 - Notification-derived attention groups clear when any candidate window in that group becomes active.
+- Flash-based suppression for an ambiguous notification persists until that notification leaves the current Windows toast list.
 - Unmonitored windows participate in matching and clearing, but never render a flashing border in the wall.
 
 ## Packaging Requirements

@@ -19,7 +19,8 @@ WindowThumbWall is a Windows desktop app for building a live thumbnail wall from
 - Avoids heavyweight screen capture, streaming, or overlay setups.
 - Adapts from a few windows to a full wall layout.
 - Supports always-on-top and fullscreen workflows.
-- Highlights windows that demand attention with flashing borders based on taskbar flashes or Windows notification matching.
+- Highlights windows that demand attention with red or orange borders based on taskbar flashes or Windows notification matching.
+- Shows a steady white border on the cell whose source window is currently active.
 - Lets you click any thumbnail to activate the original window immediately.
 - Stays local, private, and simple.
 
@@ -35,6 +36,7 @@ WindowThumbWall is a Windows desktop app for building a live thumbnail wall from
 - Quick window selection from the built-in picker.
 - One-click activation of the source window from its thumbnail.
 - Visual attention cues when a monitored window flashes in the taskbar or is matched from a Windows notification.
+- A white border that indicates which monitored source window is currently active.
 - Fullscreen mode for dedicated monitoring.
 - Automatic cleanup when source windows disappear.
 
@@ -45,9 +47,10 @@ WindowThumbWall is a Windows desktop app for building a live thumbnail wall from
 4. Right-click a thumbnail to remove it.
 5. When a monitored app flashes on the taskbar or a Windows notification resolves to it uniquely, its thumbnail border flashes red in the wall.
 6. When notification matching leaves several monitored candidates, those candidate borders flash orange.
-7. Press Enter to toggle fullscreen.
-8. Press Esc to leave fullscreen.
-9. Open the shortcut guide from the lower-left hint when you need the full control list.
+7. The cell whose source window is currently active shows a steady white border.
+8. Press Enter to toggle fullscreen.
+9. Press Esc to leave fullscreen.
+10. Open the shortcut guide from the lower-left hint when you need the full control list.
 
 ## Download Formats
 WindowThumbWall is officially distributed in three formats.
@@ -88,7 +91,7 @@ Why people use Window Thumb Wall:
 - Keep reference information visible while working in another app.
 - Build a simple monitoring wall on a second display.
 - Follow live content instead of static screenshots.
-- Notice when a window needs attention through flashing red or orange borders.
+- Notice when a window needs attention through red or orange borders, and keep track of the currently active source window with a white border.
 - Jump back to the source window with a single click on its thumbnail.
 
 Key features:
@@ -96,7 +99,8 @@ Key features:
 - Flexible wall layout that adapts to your open slots.
 - Window picker for quickly adding targets.
 - Click a thumbnail to activate its source window.
-- Flashing red or orange borders based on taskbar flashes and notification candidate resolution.
+- Red or orange borders based on taskbar flashes and notification candidate resolution.
+- A white border for the currently active monitored source window.
 - Fullscreen mode for dedicated monitoring.
 - Always-on-top support.
 - Local-only operation with no telemetry.

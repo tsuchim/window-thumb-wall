@@ -78,7 +78,7 @@ internal static partial class NotificationWindowMatcher
         };
     }
 
-    private static List<NotificationWindowCandidate> NarrowByAppIdentity(
+    internal static List<NotificationWindowCandidate> NarrowByAppIdentity(
         IReadOnlyList<NotificationWindowCandidate> candidates,
         NotificationSignal signal)
     {
@@ -293,7 +293,7 @@ internal static partial class NotificationWindowMatcher
         }
     }
 
-    private static bool HasAppIdentity(NotificationSignal signal) =>
+    internal static bool HasAppIdentity(NotificationSignal signal) =>
         !string.IsNullOrWhiteSpace(signal.AppUserModelId) ||
         !string.IsNullOrWhiteSpace(signal.AppDisplayName);
 

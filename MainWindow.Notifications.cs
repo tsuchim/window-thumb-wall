@@ -11,6 +11,7 @@ namespace WindowThumbWall;
 internal enum AttentionVisualState
 {
     None,
+    Active,
     Red,
     Orange
 }
@@ -35,6 +36,7 @@ public partial class MainWindow
 
     private readonly Dictionary<uint, NotificationAttentionGroup> _notificationAttentionGroups = [];
     private readonly HashSet<uint> _knownNotificationIds = [];
+    private readonly HashSet<uint> _notificationSuppressedByFlash = [];
     private readonly HashSet<IntPtr> _notificationResolvedWindows = [];
     private readonly HashSet<IntPtr> _notificationAmbiguousWindows = [];
 
@@ -72,6 +74,7 @@ public partial class MainWindow
         _notificationSyncQueued = false;
         _notificationSyncInProgress = false;
         _knownNotificationIds.Clear();
+        _notificationSuppressedByFlash.Clear();
         _notificationAttentionGroups.Clear();
         _notificationResolvedWindows.Clear();
         _notificationAmbiguousWindows.Clear();
@@ -113,6 +116,7 @@ public partial class MainWindow
             _knownNotificationIds.Clear();
             foreach (UserNotification notification in currentNotifications)
                 _knownNotificationIds.Add(notification.Id);
+            _notificationSuppressedByFlash.RemoveWhere(id => !_knownNotificationIds.Contains(id));
 
             _notificationAttentionGroups.Clear();
             if (currentNotifications.Count > 0)
@@ -178,6 +182,7 @@ public partial class MainWindow
                 IReadOnlyList<UserNotification> notifications =
                     await _notificationListener.GetNotificationsAsync(NotificationKinds.Toast);
                 HashSet<uint> currentIds = notifications.Select(static notification => notification.Id).ToHashSet();
+                _notificationSuppressedByFlash.RemoveWhere(id => !currentIds.Contains(id));
 
                 _notificationAttentionGroups.Clear();
                 if (notifications.Count > 0)
@@ -239,7 +244,31 @@ public partial class MainWindow
         NotificationSignal signal = BuildNotificationSignal(notification, out _);
         NotificationMatchResult result = NotificationWindowMatcher.Resolve(signal, candidates);
         if (result.Kind == NotificationMatchKind.None || result.CandidateHandles.Count == 0)
+        {
+            _notificationSuppressedByFlash.Remove(notification.Id);
             return;
+        }
+
+        if (result.Kind == NotificationMatchKind.Ambiguous)
+        {
+            if (_notificationSuppressedByFlash.Contains(notification.Id))
+                return;
+
+            if (NotificationAttentionPolicy.ShouldSuppressAmbiguousNotificationDueToFlash(
+                    signal,
+                    candidates,
+                    _flashingWindows))
+            {
+                _notificationSuppressedByFlash.Add(notification.Id);
+                AppendNotificationDiagnostic(
+                    $"Notification id={notification.Id} ambiguous attention suppressed because the same app already has an active flash signal.");
+                return;
+            }
+        }
+        else
+        {
+            _notificationSuppressedByFlash.Remove(notification.Id);
+        }
 
         AttentionVisualState state = result.Kind == NotificationMatchKind.Unique
             ? AttentionVisualState.Red
@@ -480,6 +509,9 @@ public partial class MainWindow
         _slotAttentionVisualStates[idx] = desiredState;
         switch (desiredState)
         {
+            case AttentionVisualState.Active:
+                ShowActiveBorder(idx);
+                break;
             case AttentionVisualState.Red:
                 StartFlashBorder(idx, AttentionRed);
                 break;
@@ -501,8 +533,11 @@ public partial class MainWindow
         if (_flashingWindows.Contains(hwnd) || _notificationResolvedWindows.Contains(hwnd))
             return AttentionVisualState.Red;
 
-        return _notificationAmbiguousWindows.Contains(hwnd)
-            ? AttentionVisualState.Orange
+        if (_notificationAmbiguousWindows.Contains(hwnd))
+            return AttentionVisualState.Orange;
+
+        return hwnd == _activeSourceHwnd
+            ? AttentionVisualState.Active
             : AttentionVisualState.None;
     }
 }
