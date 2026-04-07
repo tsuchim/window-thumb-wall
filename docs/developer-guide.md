@@ -30,6 +30,25 @@ This document covers local development, packaging, and release-related reference
 dotnet run --project WindowThumbWall.csproj
 ```
 
+### Codex "Run" Dialog
+If Codex asks for a command to launch the app, use one of the following:
+
+- Normal local run:
+
+```powershell
+dotnet run --project WindowThumbWall.csproj
+```
+
+- Installed-package run for notification listener verification:
+
+```powershell
+.\packaging\build-and-run-msix.ps1 -Configuration Release
+```
+
+Use the MSIX path when you need to verify packaged app identity or OS notification listener behavior. Use `dotnet run` for ordinary local UI work.
+If you start the unpackaged `dotnet run` / `bin\Debug` build, the Settings window now keeps `Reflect OS notifications` disabled and explains that notification attention requires the installed MSIX runtime.
+The installed MSIX build does not use constant notification polling; it scans immediately when notification-change events arrive and keeps a 5-second follow-up reconciliation window for near-term toast updates.
+
 ## Build And Test Split
 Use the supported command split below when working locally.
 
@@ -99,14 +118,19 @@ Use the checklist below when changing local packaging, install scripts, app iden
 1. Trigger an `HSHELL_FLASH` path and confirm the matching monitored slot flashes red.
 2. Trigger a Windows notification that resolves to one monitored window and confirm only that slot flashes red.
 3. Trigger a Windows notification that leaves multiple monitored candidates and confirm those slots flash orange.
-4. Confirm unmonitored windows can participate in matching but do not render wall highlights.
-5. Confirm activating one of the candidate windows clears the related attention state.
-6. Confirm notification text is matched against title tokens by exact token equality, not substring matching.
-7. Confirm `AppUserModelId` matching uses exact equality only.
-8. Confirm app-display or identity hints reduce candidates only through process name or executable base name, not full path fragments.
-9. Confirm the resolver picks the narrowest non-empty candidate set instead of the first token that matches anything.
-10. Confirm a notification with source-app metadata does not jump to a different app's window only because a generic title token happened to match.
-11. Turn `Reflect OS notifications` off in the Settings window during runtime and confirm notification-derived red/orange borders clear immediately.
+4. Confirm only monitored slots participate in notification matching.
+5. Confirm a notification without usable source-app metadata does not render red or orange attention.
+6. Confirm notifications that were already present before the listener was enabled do not get replayed into the wall until they change.
+7. Confirm activating one of the candidate windows clears the related attention state.
+8. Confirm an unchanged notification that was cleared by activating its candidate window does not light up again by itself.
+9. Confirm an ambiguous notification does not render orange when the same source app already has any monitored window flashing red from the taskbar.
+10. Confirm notification text is matched against title tokens by exact token equality, not substring matching.
+11. Confirm `AppUserModelId` matching uses exact equality only.
+12. Confirm app-display or identity hints reduce candidates only through process name or executable base name, not full path fragments.
+13. Confirm the resolver picks the narrowest non-empty candidate set instead of the first token that matches anything.
+14. Confirm a notification with source-app metadata does not jump to a different app's window only because a generic title token happened to match.
+15. Turn `Reflect OS notifications` off in the Settings window during runtime and confirm notification-derived red/orange borders clear immediately.
+16. Confirm an in-place update to the same toast shortly after the notification event is still reflected during the 5-second follow-up reconciliation window.
 
 ### Window Chrome And Shell Integration
 1. Open the shortcut guide and confirm the version label is shown at the lower left.

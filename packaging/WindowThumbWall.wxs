@@ -4,7 +4,7 @@
 
   <Package Name="WindowThumbWall"
            Manufacturer="tsuchim"
-           Version="0.2.0.0"
+           Version="$(var.ProductVersion)"
            UpgradeCode="a3f2b8c1-7d4e-4f6a-9e5b-1c8d3a2f7e9b"
            Compressed="yes"
            InstallerVersion="500">

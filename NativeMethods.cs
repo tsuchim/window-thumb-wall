@@ -91,7 +91,12 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool CloseHandle(IntPtr hObject);
 
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int GetCurrentPackageFullName(ref int packageFullNameLength, StringBuilder? packageFullName);
+
     internal const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+    private const int ERROR_SUCCESS = 0;
+    private const int ERROR_INSUFFICIENT_BUFFER = 122;
 
     internal static string GetProcessName(IntPtr hWnd)
     {
@@ -155,6 +160,24 @@ internal static class NativeMethods
         finally
         {
             CloseHandle(processHandle);
+        }
+    }
+
+    internal static bool HasCurrentPackageIdentity()
+    {
+        try
+        {
+            int length = 0;
+            int result = GetCurrentPackageFullName(ref length, null);
+            return result == ERROR_SUCCESS || result == ERROR_INSUFFICIENT_BUFFER;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return false;
+        }
+        catch (DllNotFoundException)
+        {
+            return false;
         }
     }
 

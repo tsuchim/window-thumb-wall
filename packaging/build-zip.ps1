@@ -10,7 +10,14 @@ param(
 $ErrorActionPreference = "Stop"
 $root    = Split-Path $PSScriptRoot -Parent
 $pubDir  = Join-Path $root "publish-zip-$Runtime"
-$outZip  = Join-Path $root "WindowThumbWall-v0.2-$Runtime.zip"
+
+[xml]$projectXml = Get-Content (Join-Path $root "WindowThumbWall.csproj")
+$appVersion = [string]$projectXml.Project.PropertyGroup.Version
+if ([string]::IsNullOrWhiteSpace($appVersion)) {
+    throw "Could not read <Version> from WindowThumbWall.csproj."
+}
+
+$outZip  = Join-Path $root "WindowThumbWall-v$appVersion-$Runtime.zip"
 
 # ── 1. Publish self-contained ────────────────────────────────
 Write-Host ">> Publishing for $Runtime..." -ForegroundColor Cyan

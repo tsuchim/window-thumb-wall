@@ -57,14 +57,23 @@ public partial class MainWindow : Window
     private Point _appListDragStartPoint;
     private string? _appListDragSourceProcessName;
     private int _autoAddMaintenanceTick;
+    private bool _notificationAttentionRequested;
     private bool _notificationAttentionEnabled;
 
     private uint _shellHookMsgId;
     private readonly HashSet<IntPtr> _flashingWindows = [];
     private readonly List<AttentionVisualState> _slotAttentionVisualStates = [];
+    private IntPtr _activeSourceHwnd;
     private static readonly SolidColorBrush NormalBorderBrush =
         new(Color.FromRgb(0x55, 0x55, 0x55));
-    static MainWindow() => NormalBorderBrush.Freeze();
+    private static readonly SolidColorBrush ActiveBorderBrush = new(Colors.White);
+    private static readonly Thickness ActiveBorderThickness = new(2);
+    private static readonly Thickness AttentionBorderThickness = new(3);
+    static MainWindow()
+    {
+        NormalBorderBrush.Freeze();
+        ActiveBorderBrush.Freeze();
+    }
 
     private AppState? _pendingRestore;
     private bool _stateTrackingEnabled;
@@ -85,7 +94,8 @@ public partial class MainWindow : Window
 
         // Restore window geometry before the window is shown.
         _pendingRestore = AppState.Load();
-        _notificationAttentionEnabled = _pendingRestore.EnableOsNotificationAttention;
+        _notificationAttentionRequested = _pendingRestore.EnableOsNotificationAttention;
+        _notificationAttentionEnabled = _notificationAttentionRequested && SupportsNotificationAttentionRuntime();
         if (_pendingRestore.Geometry is { Width: > 0, Height: > 0 } geo)
         {
             WindowStartupLocation = WindowStartupLocation.Manual;
@@ -98,6 +108,7 @@ public partial class MainWindow : Window
         }
 
         _timer.Tick += Timer_Tick;
+        InitializeNotificationFollowUpTimer();
         _stateSaveTimer.Tick += StateSaveTimer_Tick;
         _thumbnailSettleTimer.Tick += ThumbnailSettleTimer_Tick;
         _thumbnailThrottleTimer.Tick += ThumbnailThrottleTimer_Tick;
@@ -134,6 +145,7 @@ public partial class MainWindow : Window
         RestorePanelLayout();
         RestoreAutoAddApps();
         RestoreSlots();
+        SyncActiveSourceWindow(forceRefresh: true);
         if (_notificationAttentionEnabled)
             InitializeNotificationListenerAsync();
         _timer.Start();
@@ -143,6 +155,7 @@ public partial class MainWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         _timer.Stop();
+        _notificationFollowUpTimer.Stop();
         _stateSaveTimer.Stop();
         _thumbnailSettleTimer.Stop();
         _thumbnailThrottleTimer.Stop();
@@ -203,7 +216,7 @@ public partial class MainWindow : Window
                 _isFullScreen ? _savedLeftColWidth : LeftColumnDefinition.Width,
                 LeftPanel.ActualWidth),
             AppListHeight = GetPersistedLength(AppListRowDefinition.Height, AppList.ActualHeight),
-            EnableOsNotificationAttention = _notificationAttentionEnabled
+            EnableOsNotificationAttention = _notificationAttentionRequested
         };
 
         foreach (var slot in _slots)
@@ -498,6 +511,7 @@ public partial class MainWindow : Window
         _cellHosts.RemoveAt(idx);
         _slots.RemoveAt(idx);
         _slotAttentionVisualStates.RemoveAt(idx);
+        SyncActiveSourceWindow(forceRefresh: true);
 
         for (int i = 0; i < _cellBorders.Count; i++)
         {
@@ -583,6 +597,7 @@ public partial class MainWindow : Window
         }
         ValidateSlots();
         RecoverMissingThumbnailRegistrations();
+        SyncActiveSourceWindow();
         CheckFlashState();
     }
 
@@ -1023,6 +1038,7 @@ public partial class MainWindow : Window
 
         _cellLabels[idx].Text = title;
         RequestThumbnailRegistrationRefresh(sourceHwnd, bypassCooldown: true);
+        SyncActiveSourceWindow(forceRefresh: true);
         UpdateSlotAttentionVisual(idx);
         QueueNotificationAttentionSync();
         return true;
@@ -1309,6 +1325,7 @@ public partial class MainWindow : Window
         MoveItem(_cellHitLayers, sourceIndex, targetIndex);
         MoveItem(_cellHosts, sourceIndex, targetIndex);
         MoveItem(_slots, sourceIndex, targetIndex);
+        MoveItem(_slotAttentionVisualStates, sourceIndex, targetIndex);
 
         for (int idx = 0; idx < _cellBorders.Count; idx++)
         {
@@ -1432,6 +1449,7 @@ public partial class MainWindow : Window
 
     private void OnWindowActivated(IntPtr hwnd)
     {
+        SetActiveSourceWindow(hwnd);
         ClearNotificationAttentionGroupsForWindow(hwnd);
         if (_flashingWindows.Remove(hwnd))
         {
@@ -1472,15 +1490,51 @@ public partial class MainWindow : Window
         };
         brush.BeginAnimation(SolidColorBrush.ColorProperty, anim);
         border.BorderBrush = brush;
-        border.BorderThickness = new Thickness(3);
+        border.BorderThickness = AttentionBorderThickness;
     }
 
     private void StartFlashBorder(int idx, Color color) => StartFlashBorder(_cellBorders[idx], color);
 
+    private void ShowActiveBorder(int idx)
+    {
+        _cellBorders[idx].BorderBrush = ActiveBorderBrush;
+        _cellBorders[idx].BorderThickness = ActiveBorderThickness;
+    }
+
     private void StopFlashBorder(int idx)
     {
         _cellBorders[idx].BorderBrush = NormalBorderBrush;
-        _cellBorders[idx].BorderThickness = new Thickness(1);
+        _cellBorders[idx].BorderThickness = CellBorderThickness;
+    }
+
+    private void SyncActiveSourceWindow(bool forceRefresh = false) =>
+        SetActiveSourceWindow(NativeMethods.GetForegroundWindow(), forceRefresh);
+
+    private void SetActiveSourceWindow(IntPtr hwnd, bool forceRefresh = false)
+    {
+        IntPtr nextActiveSource = FindSlotIndexBySourceHwnd(hwnd) >= 0
+            ? hwnd
+            : IntPtr.Zero;
+
+        if (!forceRefresh && nextActiveSource == _activeSourceHwnd)
+            return;
+
+        IntPtr previousActiveSource = _activeSourceHwnd;
+        _activeSourceHwnd = nextActiveSource;
+
+        if (previousActiveSource != IntPtr.Zero)
+        {
+            int previousIndex = FindSlotIndexBySourceHwnd(previousActiveSource);
+            if (previousIndex >= 0)
+                UpdateSlotAttentionVisual(previousIndex);
+        }
+
+        if (nextActiveSource != IntPtr.Zero && nextActiveSource != previousActiveSource)
+        {
+            int nextIndex = FindSlotIndexBySourceHwnd(nextActiveSource);
+            if (nextIndex >= 0)
+                UpdateSlotAttentionVisual(nextIndex);
+        }
     }
 
     // Fullscreen

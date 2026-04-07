@@ -7,7 +7,10 @@ namespace WindowThumbWall;
 
 public sealed class SettingsWindow : Window
 {
-    public SettingsWindow(bool osNotificationAttentionEnabled, Action<bool> onNotificationAttentionChanged)
+    public SettingsWindow(
+        bool osNotificationAttentionEnabled,
+        bool notificationAttentionSupported,
+        Action<bool> onNotificationAttentionChanged)
     {
         ArgumentNullException.ThrowIfNull(onNotificationAttentionChanged);
 
@@ -18,6 +21,7 @@ public sealed class SettingsWindow : Window
         ResizeMode = ResizeMode.NoResize;
 
         var root = new Grid { Margin = new Thickness(14) };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -41,12 +45,27 @@ public sealed class SettingsWindow : Window
         };
         notificationCheckBox.Checked += (_, _) => onNotificationAttentionChanged(true);
         notificationCheckBox.Unchecked += (_, _) => onNotificationAttentionChanged(false);
+        notificationCheckBox.IsEnabled = notificationAttentionSupported;
         Grid.SetRow(notificationCheckBox, 1);
+
+        var notificationHint = new TextBlock
+        {
+            Text = notificationAttentionSupported
+                ? LocalizedText.Get("setting.osNotifications.supportedHint")
+                : LocalizedText.Get("setting.osNotifications.requiresPackage.inline"),
+            Foreground = notificationAttentionSupported
+                ? Brushes.Gainsboro
+                : Brushes.Orange,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(24, -6, 0, 14),
+            MaxWidth = 360
+        };
+        Grid.SetRow(notificationHint, 2);
 
         var footer = new Grid();
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetRow(footer, 2);
+        Grid.SetRow(footer, 3);
 
         var closeButton = new Button
         {
@@ -60,6 +79,7 @@ public sealed class SettingsWindow : Window
 
         root.Children.Add(header);
         root.Children.Add(notificationCheckBox);
+        root.Children.Add(notificationHint);
         footer.Children.Add(closeButton);
         root.Children.Add(footer);
 

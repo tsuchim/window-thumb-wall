@@ -50,19 +50,18 @@ internal static partial class NotificationWindowMatcher
         ArgumentNullException.ThrowIfNull(windows);
 
         List<NotificationWindowCandidate> candidates = windows
-            .Where(static window => window.Handle != IntPtr.Zero && !string.IsNullOrWhiteSpace(window.Title))
+            .Where(static window => window.Handle != IntPtr.Zero)
             .DistinctBy(static window => window.Handle)
             .ToList();
 
-        if (candidates.Count == 0)
+        if (candidates.Count == 0 || !HasAppIdentity(signal))
             return NotificationMatchResult.None;
 
         List<NotificationWindowCandidate> appCompatible = NarrowByAppIdentity(candidates, signal);
-        bool hasAppIdentity = HasAppIdentity(signal);
-        if (hasAppIdentity && appCompatible.Count == 0)
+        if (appCompatible.Count == 0)
             return NotificationMatchResult.None;
 
-        List<NotificationWindowCandidate> narrowed = appCompatible.Count > 0 ? appCompatible : candidates;
+        List<NotificationWindowCandidate> narrowed = appCompatible;
 
         List<NotificationWindowCandidate> titleMatches = NarrowByTitleTokens(narrowed, signal.NotificationTexts);
         if (titleMatches.Count > 0)
@@ -78,7 +77,7 @@ internal static partial class NotificationWindowMatcher
         };
     }
 
-    private static List<NotificationWindowCandidate> NarrowByAppIdentity(
+    internal static List<NotificationWindowCandidate> NarrowByAppIdentity(
         IReadOnlyList<NotificationWindowCandidate> candidates,
         NotificationSignal signal)
     {
@@ -293,7 +292,7 @@ internal static partial class NotificationWindowMatcher
         }
     }
 
-    private static bool HasAppIdentity(NotificationSignal signal) =>
+    internal static bool HasAppIdentity(NotificationSignal signal) =>
         !string.IsNullOrWhiteSpace(signal.AppUserModelId) ||
         !string.IsNullOrWhiteSpace(signal.AppDisplayName);
 
