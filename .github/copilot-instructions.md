@@ -21,3 +21,27 @@
 
 - 通常の確認は `dotnet build WindowThumbWall.sln` または `dotnet run --project WindowThumbWall.csproj` を使う。
 - packaging 変更では `.\packaging\build-all.ps1` か個別 build script で 3 形式を維持しているか確認する。
+
+## Agent observability
+
+When investigating stalled, slow, expensive, repetitive, or suspicious agent sessions, inspect the local Copilot OpenTelemetry output before guessing.
+
+Primary local trace file: `C:\Users\tsuchim\copilot-otel\copilot-otel.jsonl`
+
+When available, also use the exported SQLite trace database from `Chat: Export Agent Traces DB`.
+
+Inspect:
+- the last `invoke_agent`, `chat`, `execute_tool`, or `execute_hook` span before a stall
+- long-running tool calls
+- failed tool calls
+- failed terminal commands
+- repeated or unnecessary tool calls
+- model names
+- token usage
+- cache read / cache creation token usage
+- subagent parent-child relationships
+- prompt / response / tool argument / tool result content when captured
+
+The current observability policy is content-first: capture useful local hints from information already handed to agents unless log volume becomes impractical.
+
+Do not silently disable content capture. If log volume becomes too large, report measured file size growth and propose a retention or truncation policy.
