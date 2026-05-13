@@ -41,4 +41,4 @@ If this policy changes in the future, updates will be published in this file.
 For questions about this policy, please contact the developer through the project's GitHub repository.
 
 Project page:
-https://github.com/tsuchim/WindowThumbWall
+https://github.com/tsuchim/window-thumb-wall

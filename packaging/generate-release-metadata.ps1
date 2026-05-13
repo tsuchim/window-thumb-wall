@@ -138,7 +138,7 @@ if ($isDev) {
     $downloadVersion = 'dev'
 }
 
-$repository = 'tsuchim/WindowThumbWall'
+$repository = 'tsuchim/window-thumb-wall'
 if ($env:GITHUB_REPOSITORY) {
     $repository = $env:GITHUB_REPOSITORY
 }

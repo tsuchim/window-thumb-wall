@@ -21,8 +21,8 @@ Windows SmartScreen / Defender may show warnings depending on your environment.
 
 #### Docs
 
-- English: https://github.com/tsuchim/WindowThumbWall#readme
-- 日本語: https://github.com/tsuchim/WindowThumbWall/blob/main/README.ja.md
+- English: https://github.com/tsuchim/window-thumb-wall#readme
+- 日本語: https://github.com/tsuchim/window-thumb-wall/blob/main/README.ja.md
 
 #### Changes
 

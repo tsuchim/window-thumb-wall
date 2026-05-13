@@ -4,7 +4,7 @@ Keep the right windows in view, all the time.
 
 WindowThumbWall is a Windows desktop app for building a live thumbnail wall from your open windows. Instead of repeatedly switching between apps, you keep the windows that matter visible in one place while you continue working.
 
-[Japanese README](README.ja.md) | [Download Releases](https://github.com/tsuchim/WindowThumbWall/releases)
+[Japanese README](README.ja.md) | [Download Releases](https://github.com/tsuchim/window-thumb-wall/releases)
 
 ![WindowThumbWall screenshot](packaging/Assets/screenshot-1-1280.png)
 

@@ -21,8 +21,14 @@ Thumbs.db
 # Dev container
 Dockerfile
 
+# Local agent tooling
+.codex/
+
 # Publish / packaging outputs
+dist/
+dist-*/
 publish-*/
+packaging/
 *.msix
 *.msi
 *.zip

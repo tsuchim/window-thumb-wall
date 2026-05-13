@@ -4,7 +4,7 @@
 
 WindowThumbWall は、開いているウィンドウをライブサムネイルとして並べ、ひとつの壁面のように表示できる Windows デスクトップアプリです。アプリを何度も切り替えなくても、見ていたい情報をまとめて表示したまま作業できます。
 
-[English README](README.md) | [最新リリースのダウンロード](https://github.com/tsuchim/WindowThumbWall/releases)
+[English README](README.md) | [最新リリースのダウンロード](https://github.com/tsuchim/window-thumb-wall/releases)
 
 ![WindowThumbWall スクリーンショット](packaging/Assets/screenshot-1-1280.png)
 
