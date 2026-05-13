@@ -22,13 +22,14 @@ Thumbs.db
 Dockerfile
 
 # Local agent tooling
-.codex/
+.codex/environments/
 
 # Publish / packaging outputs
 dist/
 dist-*/
 publish-*/
-packaging/
+packaging/AppPackages/
+packaging/BundleArtifacts/
 *.msix
 *.msi
 *.zip
