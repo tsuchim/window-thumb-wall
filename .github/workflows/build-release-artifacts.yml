@@ -82,10 +82,19 @@ jobs:
               -p:PublishSingleFile=false `
               -o "publish-msi-$arch"
 
+            $plainVersion = $env:VERSION -replace '^v', ''
+            if ($plainVersion -match '^\d+\.\d+\.\d+$') {
+              $versionParts = $plainVersion.Split('.')
+              $msiProductVersion = "$($versionParts[0]).$($versionParts[1]).$($versionParts[2]).0"
+            } else {
+              $msiProductVersion = (Select-Xml -Path WindowThumbWall.csproj -XPath '/Project/PropertyGroup/AssemblyVersion').Node.InnerText
+            }
+
             wix build packaging\WindowThumbWall.wxs `
               -arch $arch `
               -ext WixToolset.UI.wixext `
               -d PublishDir="publish-msi-$arch" `
+              -d ProductVersion="$msiProductVersion" `
               -o "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-$arch.msi"
 
             # ── MSIX artifact ───────────────────────────────────────

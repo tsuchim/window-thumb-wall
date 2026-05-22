@@ -12,7 +12,15 @@ $ErrorActionPreference = "Stop"
 $root    = Split-Path $PSScriptRoot -Parent
 $pubDir  = Join-Path $root "publish-msi-$Runtime"
 $pkgDir  = Join-Path $root "packaging"
-$outMsi  = Join-Path $root "WindowThumbWall-v0.2-$Runtime.msi"
+
+[xml]$projectXml = Get-Content (Join-Path $root "WindowThumbWall.csproj")
+$appVersion = [string]$projectXml.Project.PropertyGroup.Version
+$msiProductVersion = [string]$projectXml.Project.PropertyGroup.AssemblyVersion
+if ([string]::IsNullOrWhiteSpace($appVersion) -or [string]::IsNullOrWhiteSpace($msiProductVersion)) {
+    throw "Could not read version properties from WindowThumbWall.csproj."
+}
+
+$outMsi  = Join-Path $root "WindowThumbWall-v$appVersion-$Runtime.msi"
 
 # ── 1. Ensure WiX v5 CLI is available ────────────────────────
 Write-Host ">> Checking WiX toolset..." -ForegroundColor Cyan
@@ -44,6 +52,7 @@ wix build "$pkgDir\WindowThumbWall.wxs" `
     -arch $wixArch `
     -ext WixToolset.UI.wixext `
     -d PublishDir="$pubDir" `
+    -d ProductVersion="$msiProductVersion" `
     -o $outMsi
 
 # ── Done ──────────────────────────────────────────────────────

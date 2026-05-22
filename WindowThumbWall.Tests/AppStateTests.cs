@@ -31,6 +31,7 @@ public sealed class AppStateTests : IDisposable
         {
             LeftPanelWidth = 320,
             AppListHeight = 240,
+            EnableOsNotificationAttention = true,
             Slots =
             [
                 new SlotState
@@ -49,9 +50,18 @@ public sealed class AppStateTests : IDisposable
 
         Assert.Equal(320, loaded.LeftPanelWidth);
         Assert.Equal(240, loaded.AppListHeight);
+        Assert.True(loaded.EnableOsNotificationAttention);
         Assert.Single(loaded.Slots);
         Assert.Equal("notepad", loaded.Slots[0].ProcessName);
         Assert.Equal("notes.txt", loaded.Slots[0].Title);
+    }
+
+    [Fact]
+    public void Load_DefaultsNotificationAttentionToDisabled()
+    {
+        AppState loaded = AppState.Load();
+
+        Assert.False(loaded.EnableOsNotificationAttention);
     }
 
     public void Dispose()

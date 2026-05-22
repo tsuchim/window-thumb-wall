@@ -2,14 +2,15 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <Version>0.6.2</Version>
-    <AssemblyVersion>0.6.2.0</AssemblyVersion>
-    <FileVersion>0.6.2.0</FileVersion>
+    <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
+    <Version>0.6.7</Version>
+    <AssemblyVersion>0.6.7.0</AssemblyVersion>
+    <FileVersion>0.6.7.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,8 +18,21 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app-icon.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="artifacts\**\*;WindowThumbWall.Tests\artifacts\**\*;packaging\**\*;publish-msix\**\*" />
+    <EmbeddedResource Remove="artifacts\**\*;WindowThumbWall.Tests\artifacts\**\*;packaging\**\*;publish-msix\**\*" />
+    <Content Remove="artifacts\**\*;WindowThumbWall.Tests\artifacts\**\*;packaging\**\*;publish-msix\**\*" />
+    <None Remove="artifacts\**\*;WindowThumbWall.Tests\artifacts\**\*;packaging\**\*;publish-msix\**\*" />
     <Compile Remove="WindowThumbWall.Tests\**\*.cs" />
     <EmbeddedResource Remove="WindowThumbWall.Tests\**\*" />
+    <Content Remove="WindowThumbWall.Tests\**\*" />
     <None Remove="WindowThumbWall.Tests\**\*" />
   </ItemGroup>
 

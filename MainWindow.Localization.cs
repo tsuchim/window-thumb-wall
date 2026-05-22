@@ -10,6 +10,7 @@ public partial class MainWindow
         FilterLabel.Text = LocalizedText.Get("label.filter");
         AppListLabel.Text = LocalizedText.Get("label.autoApps");
         FullScreenButton.Content = LocalizedText.Get("button.fullscreen");
+        SettingsButton.Content = LocalizedText.Get("label.settings");
         ShortcutGuideButton.Content = BuildQuickHelpText();
     }
 
@@ -42,5 +43,18 @@ public partial class MainWindow
         };
         _shortcutGuideWindow.Closed += (_, _) => _shortcutGuideWindow = null;
         _shortcutGuideWindow.Show();
+    }
+
+    private void SettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var settingsWindow = new SettingsWindow(
+            _notificationAttentionRequested,
+            SupportsNotificationAttentionRuntime(),
+            enabled => SetNotificationAttentionEnabled(enabled))
+        {
+            Owner = this
+        };
+
+        settingsWindow.ShowDialog();
     }
 }

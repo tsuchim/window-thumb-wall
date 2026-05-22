@@ -18,6 +18,7 @@ internal sealed class ThumbnailSlot
     internal string SourceTitle { get; private set; } = string.Empty;
     internal string SourceProcessName { get; private set; } = string.Empty;
     internal bool IsOccupied => SourceHwnd != IntPtr.Zero;
+    internal bool HasRegistration => _thumbId != IntPtr.Zero;
 
     internal ThumbnailSlot(ThumbHost host, IntPtr ownerHwnd)
     {
@@ -30,29 +31,39 @@ internal sealed class ThumbnailSlot
         Clear();
         if (_host.Hwnd == IntPtr.Zero) return false;
 
-        int hr = NativeMethods.DwmRegisterThumbnail(_ownerHwnd, sourceHwnd, out var id);
-        if (hr != 0) return false;
-
-        _thumbId = id;
         SourceHwnd = sourceHwnd;
         SourceTitle = title;
         SourceProcessName = processName;
-        _hasAppliedState = false;
+        if (!TryRegisterThumbnail())
+        {
+            ResetSourceInfo();
+            return false;
+        }
+
+        UpdateThumbnail();
+        return true;
+    }
+
+    internal bool RefreshRegistration()
+    {
+        if (SourceHwnd == IntPtr.Zero || _host.Hwnd == IntPtr.Zero)
+            return false;
+
+        UnregisterThumbnail();
+        if (!TryRegisterThumbnail())
+            return false;
+
         UpdateThumbnail();
         return true;
     }
 
     internal void Clear()
     {
-        if (_thumbId != IntPtr.Zero)
-        {
-            NativeMethods.DwmUnregisterThumbnail(_thumbId);
-            _thumbId = IntPtr.Zero;
-        }
-        SourceHwnd = IntPtr.Zero;
-        SourceTitle = string.Empty;
-        SourceProcessName = string.Empty;
+        UnregisterThumbnail();
+        ResetSourceInfo();
         _hasAppliedState = false;
+        _lastVisible = false;
+        _lastDestination = default;
     }
 
     /// <summary>
@@ -140,6 +151,34 @@ internal sealed class ThumbnailSlot
     internal void UpdateSourceTitle(string title)
     {
         SourceTitle = title;
+    }
+
+    private bool TryRegisterThumbnail()
+    {
+        int hr = NativeMethods.DwmRegisterThumbnail(_ownerHwnd, SourceHwnd, out var id);
+        if (hr != 0) return false;
+
+        _thumbId = id;
+        _hasAppliedState = false;
+        _lastVisible = false;
+        _lastDestination = default;
+        return true;
+    }
+
+    private void UnregisterThumbnail()
+    {
+        if (_thumbId == IntPtr.Zero)
+            return;
+
+        NativeMethods.DwmUnregisterThumbnail(_thumbId);
+        _thumbId = IntPtr.Zero;
+    }
+
+    private void ResetSourceInfo()
+    {
+        SourceHwnd = IntPtr.Zero;
+        SourceTitle = string.Empty;
+        SourceProcessName = string.Empty;
     }
 
     private static bool RectEquals(NativeMethods.RECT a, NativeMethods.RECT b) =>
