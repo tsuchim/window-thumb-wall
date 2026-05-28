@@ -98,6 +98,27 @@ Notes:
 - A pure current-user install is not always enough for signed `.msixbundle` sideloading. When Windows still rejects the bundle with `0x800B0109`, trust the certificate in the local machine store once or enable Developer Mode so the fallback register path can be used.
 - Notification listener features are expected to be tested from the installed MSIX, not from an unpackaged `dotnet run`.
 
+## Local Generated Directories
+Keep `.codex/` if you use Codex workspace-local settings for this repo. It is local tooling state, not an app build artifact.
+
+The directories below are disposable local outputs and are safe to delete when you no longer need the generated contents:
+- `artifacts/`: investigation logs, temporary archives, and ad-hoc local test outputs
+- `dist/` and `dist-release-*/`: locally generated release metadata output directories
+- `packaging/AppPackages/`: local MSIX build output consumed by `build-msix.ps1` and `install-msix.ps1`
+- `packaging/BundleArtifacts/`: local packaging helper outputs
+- `packaging/local-register/`: fallback registration staging created by `install-msix.ps1`
+
+Recommended cleanup points:
+- before branch cleanup
+- before release prep if you want a fresh local packaging state
+- after packaging investigations that produced large local artifacts
+
+Example PowerShell cleanup:
+
+```powershell
+Remove-Item -Recurse -Force artifacts, dist, dist-release-*, packaging\AppPackages, packaging\BundleArtifacts, packaging\local-register
+```
+
 ## Local MSIX Verification Checklist
 Use the checklist below when changing local packaging, install scripts, app identity, attention notifications, or taskbar integration.
 
