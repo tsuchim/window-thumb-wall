@@ -51,6 +51,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _thumbnailThrottleTimer = new();
     private readonly DispatcherTimer _thumbnailRefreshTimer = new() { Interval = ThumbnailRefreshDebounce };
     private readonly List<WindowInfo> _windowCache = [];
+    private readonly TaskbarWindowOrder _taskbarWindowOrder = new();
     private readonly ObservableCollection<AutoAddAppEntry> _autoAddApps = [];
     private readonly HashSet<string> _autoAddAppSet = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _appDisplayNameCache = new(StringComparer.OrdinalIgnoreCase);
@@ -142,6 +143,7 @@ public partial class MainWindow : Window
         NativeMethods.RegisterShellHookWindow(_mainHwnd);
         HwndSource.FromHwnd(_mainHwnd)?.AddHook(WndProc);
 
+        RefreshWindowList();
         RestorePanelLayout();
         RestoreAutoAddApps();
         RestoreSlots();
@@ -296,11 +298,13 @@ public partial class MainWindow : Window
 
         foreach (var saved in state.Slots)
         {
+            string savedTitle = saved.Title.TrimEnd('\0');
+
             // 1. Exact match: same process + same title.
             var match = allWindows.FirstOrDefault(w =>
                 !usedHandles.Contains(w.Handle) &&
                 w.ProcessName.Equals(saved.ProcessName, StringComparison.OrdinalIgnoreCase) &&
-                w.Title == saved.Title);
+                w.Title == savedTitle);
 
             // 2. Fallback: same process name, any title.
             if (match.Handle == IntPtr.Zero)
@@ -493,6 +497,8 @@ public partial class MainWindow : Window
 
     private void RemoveSlot(int idx)
     {
+        if (!ManualSlotPlanner.CanRemove(idx, _slots.Count)) return;
+
         IntPtr sourceHwnd = _slots[idx].SourceHwnd;
         ClearNotificationAttentionGroupsForWindow(sourceHwnd);
         _flashingWindows.Remove(sourceHwnd);
@@ -618,6 +624,7 @@ public partial class MainWindow : Window
             });
             return true;
         }, IntPtr.Zero);
+        _taskbarWindowOrder.ObserveWindowsInZOrder(_windowCache.Select(window => window.Handle));
         ApplyFilter();
     }
 
@@ -716,19 +723,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        // First free slot.
-        int target = -1;
-        for (int i = 0; i < _slots.Count; i++)
-        {
-            if (!_slots[i].IsOccupied)
-            {
-                target = i;
-                break;
-            }
-        }
+        int target = ManualSlotPlanner.GetAddTarget(
+            _slots.Select(slot => slot.IsOccupied ? slot.SourceHwnd : IntPtr.Zero).ToList(),
+            info.Handle);
+        if (target < 0)
+            return;
 
         // No free slot -> add a new one.
-        if (target == -1)
+        if (target == _slots.Count)
             target = AddSlot();
 
         if (AssignSlot(target, info.Handle, info.Title, info.ProcessName))
@@ -923,16 +925,30 @@ public partial class MainWindow : Window
         if (_autoAddAppSet.Count == 0) return;
 
         Dictionary<string, int> nextInsertIndexByProcess = BuildAutoAddInsertIndexes();
+        IReadOnlyList<WindowInfo> windowsInTaskbarOrder = _taskbarWindowOrder.Order(
+            _windowCache,
+            window => window.Handle);
+        HashSet<IntPtr> monitoredHandles = _slots
+            .Where(slot => slot.IsOccupied)
+            .Select(slot => slot.SourceHwnd)
+            .ToHashSet();
+        IReadOnlyList<WindowInfo> pendingWindows = AutoAddWindowPlanner.GetPendingWindows(
+            _autoAddApps,
+            windowsInTaskbarOrder,
+            monitoredHandles);
 
-        foreach (var info in _windowCache)
+        foreach (WindowInfo info in pendingWindows)
         {
-            if (!_autoAddAppSet.Contains(info.ProcessName)) continue;
-
             if (!nextInsertIndexByProcess.TryGetValue(info.ProcessName, out int insertIndex))
                 continue;
 
             AddWindowToMonitor(info, insertIndex);
-            nextInsertIndexByProcess[info.ProcessName] = Math.Min(insertIndex + 1, _slots.Count);
+            AutoAddWindowPlanner.AdvanceInsertIndexes(
+                _autoAddApps,
+                nextInsertIndexByProcess,
+                info.ProcessName,
+                insertIndex,
+                _slots.Count);
         }
     }
 
@@ -1417,7 +1433,15 @@ public partial class MainWindow : Window
             int shellEvent = wParam.ToInt32();
             IntPtr targetHwnd = lParam;
 
-            if (shellEvent == NativeMethods.HSHELL_FLASH)
+            if (shellEvent == NativeMethods.HSHELL_WINDOWCREATED)
+            {
+                _taskbarWindowOrder.ObserveCreated(targetHwnd);
+            }
+            else if (shellEvent == NativeMethods.HSHELL_WINDOWDESTROYED)
+            {
+                _taskbarWindowOrder.ObserveDestroyed(targetHwnd);
+            }
+            else if (shellEvent == NativeMethods.HSHELL_FLASH)
             {
                 OnWindowFlash(targetHwnd);
             }

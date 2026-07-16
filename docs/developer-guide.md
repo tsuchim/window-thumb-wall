@@ -68,6 +68,28 @@ dotnet build .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release
 dotnet test .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release --no-build
 ```
 
+## Taskbar-Like Automatic Addition Order
+
+Automatic addition has one persistent in-memory ordering tracker for the lifetime of the running application. At startup, the application seeds already-open eligible windows from the available Z-order state as a deterministic best-effort approximation. Windows observed through later Shell Hook create notifications are appended in observed creation order; destroy notifications remove them, so a reused numeric HWND receives a new position.
+
+The tracker is not rebuilt from the changing Z order on refresh. Candidate selection is separate: already monitored HWNDs are excluded before automatic insertion, so automatic maintenance never moves existing slots. Registered applications remain the outer ordering group in their configured registration order, while windows within each group use the tracker order. A window observed while hidden has its position retained until it later becomes eligible for the window list.
+
+Windows does not provide a supported API for enumerating the exact taskbar-item order. Manual taskbar rearrangement after WindowThumbWall starts is therefore not tracked. Do not add Explorer-private COM usage, taskbar scraping, undocumented Explorer internals, or UI Automation to simulate that capability. The tracker itself does not survive restart; saved monitored slots do, and are restored without automatic rearrangement.
+
+The existing WPF-window Shell Hook is the event source. It is registered once after the main HWND exists and deregistered from `Closed`. `HSHELL_WINDOWCREATED` and `HSHELL_WINDOWDESTROYED` only update the tracker; the existing activation, redraw, and flash handling remains on the WPF thread.
+
+### Runtime Acceptance Checklist
+
+Use an isolated state file so normal user configuration is untouched:
+
+```powershell
+$acceptanceRoot = Join-Path $PWD "artifacts\taskbar-auto-add-order-acceptance"
+New-Item -ItemType Directory -Force $acceptanceRoot | Out-Null
+$env:WINDOWTHUMBWALL_STATE_PATH = Join-Path $acceptanceRoot "state.json"
+```
+
+Verify post-start `A, B, C` ordering; closing B then creating D (`A, C, D`); preservation of a manual monitored-slot order; two registered applications created in interleaved order; restart with saved slots; deterministic best-effort ordering for windows that predate startup; and regressions for manual add/removal, application/slot dragging, attention behavior, and clean hook shutdown/reopen. Read the isolated `state.json` as objective slot-order evidence.
+
 ### Packaging Build
 ```powershell
 .\packaging\build-msix.ps1 -Configuration Release

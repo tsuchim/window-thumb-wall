@@ -39,6 +39,11 @@ WindowThumbWall is a Windows desktop app for building a live thumbnail wall from
 - A white border that indicates which monitored source window is currently active.
 - Fullscreen mode for dedicated monitoring.
 - Automatic cleanup when source windows disappear.
+- Optional automatic addition for registered applications. Windows created while WindowThumbWall is running are added in their observed creation order within each application; registered applications stay in their configured order.
+
+## Automatic Addition Order
+
+Automatic addition uses a stable order close to the Windows taskbar, not an exact taskbar-order readout. Windows that were already open when WindowThumbWall starts receive a best-effort initial order from available window state. Windows created afterwards retain their observed creation order. Already monitored windows are never automatically rearranged, and later manual taskbar rearrangement is not tracked.
 
 ## Quick Start
 1. Launch WindowThumbWall.
