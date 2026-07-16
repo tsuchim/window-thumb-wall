@@ -1,0 +1,11 @@
+schema_version: 1
+repository: tsuchim/window-thumb-wall
+ultimate_domain: application
+sidecar_owner: repository-local
+owned_surfaces: [source-code, domain-semantics]
+foreign_surfaces: [runtime-configuration]
+shared_surface_exceptions: []
+artifact_roles:
+  produces: []
+  consumes: []
+runtime_owner: tsuchim/window-thumb-wall
