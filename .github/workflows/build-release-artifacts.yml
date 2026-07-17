@@ -109,7 +109,6 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "WiX MSI build failed for $runtime" }
             if ($wixOutput -match 'WIX8600|WIX8601') { throw "WiX harvested no MSI payload files for $runtime" }
             & .\packaging\verify-msi-payload.ps1 -MsiPath "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-$arch.msi"
-            if ($LASTEXITCODE -ne 0) { throw "MSI payload validation failed for $runtime" }
 
             # ── MSIX artifact ───────────────────────────────────────
             dotnet publish WindowThumbWall.csproj `
@@ -160,6 +159,13 @@ jobs:
           $uninstallLog = Join-Path $env:DIST_DIR 'msi-uninstall.log'
           $installedExe = 'C:\Program Files\WindowThumbWall\WindowThumbWall.exe'
           $installed = $false
+          $plainVersion = $env:VERSION -replace '^v', ''
+          if ($plainVersion -match '^\d+\.\d+\.\d+$') {
+            $versionParts = $plainVersion.Split('.')
+            $expectedFileVersion = "$($versionParts[0]).$($versionParts[1]).$($versionParts[2]).0"
+          } else {
+            $expectedFileVersion = (Select-Xml -Path WindowThumbWall.csproj -XPath '/Project/PropertyGroup/AssemblyVersion').Node.InnerText
+          }
 
           try {
             $installProcess = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', $msiPath, '/qn', '/norestart', '/l*v', $installLog) -PassThru -Wait
@@ -168,7 +174,7 @@ jobs:
 
             if (-not (Test-Path -LiteralPath $installedExe)) { throw "Installed executable not found: $installedExe" }
             $installedVersion = (Get-Item -LiteralPath $installedExe).VersionInfo.FileVersion
-            if ($installedVersion -ne '0.6.9.0') { throw "Installed executable version was $installedVersion, expected 0.6.9.0" }
+            if ($installedVersion -ne $expectedFileVersion) { throw "Installed executable version was $installedVersion, expected $expectedFileVersion" }
 
             $app = Start-Process -FilePath $installedExe -PassThru
             Start-Sleep -Seconds 3

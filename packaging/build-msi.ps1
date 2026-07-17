@@ -48,6 +48,9 @@ dotnet publish "$root\WindowThumbWall.csproj" `
     -c $Configuration -r $Runtime --self-contained `
     -p:PublishSingleFile=false `
     -o $pubDir
+if ($LASTEXITCODE -ne 0) {
+    throw "MSI publish failed for $Runtime."
+}
 
 # ── 3. Build MSI ─────────────────────────────────────────────
 Write-Host ">> Building MSI for $Runtime..." -ForegroundColor Cyan
