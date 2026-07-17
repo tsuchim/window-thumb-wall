@@ -50,13 +50,12 @@ jobs:
 
       - name: Install WiX
         run: |
-          dotnet tool install --global wix --version 5.0.2
+          winget install --id WiXToolset.WiXCLI --exact --version 7.0.0 --accept-source-agreements --accept-package-agreements
           wix --version
 
       - name: Add WiX UI extension
         run: |
-          $wixVer = (wix --version) -replace '\+.*',''
-          wix extension add -g "WixToolset.UI.wixext/$wixVer"
+          wix extension add -g "WixToolset.UI.wixext/7.0.0"
 
       - name: Build architectures
         run: |
@@ -75,7 +74,7 @@ jobs:
             Get-ChildItem "publish-$arch" -Filter *.pdb -Recurse | Remove-Item -Force
             Compress-Archive -Path "publish-$arch\*" -DestinationPath "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-$arch.zip" -CompressionLevel Optimal
 
-            # ── MSI artifact (WiX v5) ────────────────────────────────
+            # ── MSI artifact (WiX v7) ────────────────────────────────
             # We need to publish again for MSI because it might need different settings or just a clean dir
             dotnet publish WindowThumbWall.csproj `
               -c Release -r $runtime --self-contained `

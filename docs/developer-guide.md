@@ -6,7 +6,7 @@ This document covers local development, packaging, and release-related reference
 - Windows 10 or 11
 - .NET 10 SDK as pinned in [global.json](../global.json)
 - Visual Studio 2022 or later for the easiest local debugging experience
-- WiX Toolset v5 for MSI packaging
+- WiX Toolset v7 for MSI packaging, installed with `winget install --id WiXToolset.WiXCLI --exact --accept-source-agreements --accept-package-agreements`
 
 ## Project Layout
 - [WindowThumbWall.csproj](../WindowThumbWall.csproj): main WPF desktop application
@@ -185,6 +185,8 @@ Use the checklist below when changing local packaging, install scripts, app iden
 2. Run `dotnet test WindowThumbWall.Tests\WindowThumbWall.Tests.csproj`.
 
 ## Build Packages
+
+MSI packaging uses WiX 7 and requires the operator to accept its OSMF EULA. `WixToolset.WiXAdditionalTools` is not required. MSIX uses its separate packaging path.
 Official distributions must continue to support ZIP, MSI, and MSIX.
 
 ### Build Everything
