@@ -80,6 +80,9 @@ jobs:
               -c Release -r $runtime --self-contained `
               -p:PublishSingleFile=false `
               -o "publish-msi-$arch"
+            if ($LASTEXITCODE -ne 0) { throw "MSI publish failed for $runtime" }
+
+            $publishMsiDir = (Resolve-Path "publish-msi-$arch").Path
 
             $plainVersion = $env:VERSION -replace '^v', ''
             if ($plainVersion -match '^\d+\.\d+\.\d+$') {
@@ -89,13 +92,18 @@ jobs:
               $msiProductVersion = (Select-Xml -Path WindowThumbWall.csproj -XPath '/Project/PropertyGroup/AssemblyVersion').Node.InnerText
             }
 
-            wix build packaging\WindowThumbWall.wxs `
+            $wixOutput = & wix build packaging\WindowThumbWall.wxs `
               -acceptEula wix7 `
               -arch $arch `
               -ext WixToolset.UI.wixext `
-              -d PublishDir="publish-msi-$arch" `
+              -d PublishDir="$publishMsiDir" `
               -d ProductVersion="$msiProductVersion" `
-              -o "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-$arch.msi"
+              -o "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-$arch.msi" 2>&1
+            $wixOutput | Write-Host
+            if ($LASTEXITCODE -ne 0) { throw "WiX MSI build failed for $runtime" }
+            if ($wixOutput -match 'WIX8600|WIX8601') { throw "WiX harvested no MSI payload files for $runtime" }
+            & .\packaging\verify-msi-payload.ps1 -MsiPath "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-$arch.msi"
+            if ($LASTEXITCODE -ne 0) { throw "MSI payload validation failed for $runtime" }
 
             # ── MSIX artifact ───────────────────────────────────────
             dotnet publish WindowThumbWall.csproj `

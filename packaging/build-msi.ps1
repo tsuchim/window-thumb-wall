@@ -64,6 +64,8 @@ if ($LASTEXITCODE -ne 0) {
     throw "WiX MSI build failed."
 }
 
+& "$PSScriptRoot\verify-msi-payload.ps1" -MsiPath $outMsi
+
 # ── Done ──────────────────────────────────────────────────────
 $size = [math]::Round((Get-Item $outMsi).Length / 1MB, 1)
 Write-Host ">> Done: $outMsi ($size MB)" -ForegroundColor Green
