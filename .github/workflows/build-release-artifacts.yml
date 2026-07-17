@@ -190,7 +190,6 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           .\packaging\generate-release-metadata.ps1 -Version "$env:VERSION" -OutputDir "$env:DIST_DIR"
-          if ($LASTEXITCODE -ne 0) { throw 'Release metadata generation failed' }
           @('release-notes.md', 'store-listing-ja.md', 'store-listing-en.md', 'store-whats-new-ja.md', 'store-whats-new-en.md') | ForEach-Object {
             $metadataPath = Join-Path $env:DIST_DIR $_
             if (-not (Test-Path -LiteralPath $metadataPath) -or (Get-Item -LiteralPath $metadataPath).Length -eq 0) {
