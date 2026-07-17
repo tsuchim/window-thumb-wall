@@ -50,7 +50,7 @@ jobs:
 
       - name: Install WiX
         run: |
-          winget install --id WiXToolset.WiXCLI --exact --version 7.0.0 --accept-source-agreements --accept-package-agreements
+          dotnet tool install --global wix --version 7.0.0
           wix --version
 
       - name: Add WiX UI extension
