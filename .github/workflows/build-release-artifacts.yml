@@ -59,6 +59,7 @@ jobs:
 
       - name: Build architectures
         run: |
+          $ErrorActionPreference = 'Stop'
           $architectures = @("x64", "arm64")
           foreach ($arch in $architectures) {
             $runtime = "win-$arch"
@@ -69,10 +70,15 @@ jobs:
               -c Release -r $runtime --self-contained `
               -p:PublishSingleFile=false `
               -o "publish-$arch"
+            if ($LASTEXITCODE -ne 0) { throw "Application publish failed for $runtime" }
 
             # ── ZIP artifact ─────────────────────────────────────────
             Get-ChildItem "publish-$arch" -Filter *.pdb -Recurse | Remove-Item -Force
-            Compress-Archive -Path "publish-$arch\*" -DestinationPath "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-$arch.zip" -CompressionLevel Optimal
+            $zipPath = "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-$arch.zip"
+            Compress-Archive -Path "publish-$arch\*" -DestinationPath $zipPath -CompressionLevel Optimal
+            if (-not (Test-Path -LiteralPath $zipPath) -or (Get-Item -LiteralPath $zipPath).Length -eq 0) {
+              throw "ZIP creation failed for $runtime"
+            }
 
             # ── MSI artifact (WiX v7) ────────────────────────────────
             # We need to publish again for MSI because it might need different settings or just a clean dir
@@ -110,6 +116,7 @@ jobs:
               -c Release -r $runtime --self-contained `
               -p:PublishSingleFile=false `
               -o "publish-msix-$arch"
+            if ($LASTEXITCODE -ne 0) { throw "MSIX publish failed for $runtime" }
 
             Copy-Item packaging\AppxManifest.xml "publish-msix-$arch" -Force
             Copy-Item packaging\Assets "publish-msix-$arch\Assets" -Recurse -Force
@@ -137,12 +144,69 @@ jobs:
               exit 1
             }
             & $makeappx pack /d "publish-msix-$arch" /p "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-$arch.msix" /o
+            if ($LASTEXITCODE -ne 0) { throw "makeappx failed for $runtime" }
+            $msixPath = "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-$arch.msix"
+            if (-not (Test-Path -LiteralPath $msixPath) -or (Get-Item -LiteralPath $msixPath).Length -eq 0) {
+              throw "MSIX creation failed for $runtime"
+            }
+          }
+
+      - name: Verify x64 MSI lifecycle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msiPath = (Resolve-Path "$env:DIST_DIR\WindowThumbWall-$env:VERSION-win-x64.msi").Path
+          $installLog = Join-Path $env:DIST_DIR 'msi-install.log'
+          $uninstallLog = Join-Path $env:DIST_DIR 'msi-uninstall.log'
+          $installedExe = 'C:\Program Files\WindowThumbWall\WindowThumbWall.exe'
+          $installed = $false
+
+          try {
+            & msiexec.exe /i $msiPath /qn /norestart /l*v $installLog
+            if ($LASTEXITCODE -ne 0) { throw "MSI installation failed with exit code $LASTEXITCODE" }
+            $installed = $true
+
+            if (-not (Test-Path -LiteralPath $installedExe)) { throw "Installed executable not found: $installedExe" }
+            $installedVersion = (Get-Item -LiteralPath $installedExe).VersionInfo.FileVersion
+            if ($installedVersion -ne '0.6.9.0') { throw "Installed executable version was $installedVersion, expected 0.6.9.0" }
+
+            $app = Start-Process -FilePath $installedExe -PassThru
+            Start-Sleep -Seconds 3
+            $app.Refresh()
+            if ($app.HasExited) { throw "Installed application exited during smoke test with code $($app.ExitCode)" }
+            if (-not $app.CloseMainWindow()) { throw 'Installed application did not accept a clean close request' }
+            if (-not $app.WaitForExit(10000)) { throw 'Installed application did not exit after a clean close request' }
+          }
+          finally {
+            if ($installed) {
+              & msiexec.exe /x $msiPath /qn /norestart /l*v $uninstallLog
+              if ($LASTEXITCODE -ne 0) { throw "MSI uninstall failed with exit code $LASTEXITCODE" }
+              if (Test-Path -LiteralPath $installedExe) { throw "Installed executable remains after uninstall: $installedExe" }
+            }
           }
 
       # ── Generate Metadata ─────────────────────────────────────
       - name: Generate release metadata
         run: |
+          $ErrorActionPreference = 'Stop'
           .\packaging\generate-release-metadata.ps1 -Version "$env:VERSION" -OutputDir "$env:DIST_DIR"
+          if ($LASTEXITCODE -ne 0) { throw 'Release metadata generation failed' }
+          @('release-notes.md', 'store-listing-ja.md', 'store-listing-en.md', 'store-whats-new-ja.md', 'store-whats-new-en.md') | ForEach-Object {
+            $metadataPath = Join-Path $env:DIST_DIR $_
+            if (-not (Test-Path -LiteralPath $metadataPath) -or (Get-Item -LiteralPath $metadataPath).Length -eq 0) {
+              throw "Expected release metadata was not generated: $_"
+            }
+          }
+
+      - name: Upload MSI lifecycle logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: msi-lifecycle-logs
+          path: |
+            ${{ env.DIST_DIR }}/msi-install.log
+            ${{ env.DIST_DIR }}/msi-uninstall.log
+          if-no-files-found: warn
 
       # ── Upload artifacts ───────────────────────────────────────
       # These unsigned artifacts will be signed via SignPath in a future step.
