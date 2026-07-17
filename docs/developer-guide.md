@@ -186,7 +186,7 @@ Use the checklist below when changing local packaging, install scripts, app iden
 
 ## Build Packages
 
-MSI packaging uses WiX 7 and requires the operator to accept its OSMF EULA. `WixToolset.WiXAdditionalTools` is not required. MSIX uses its separate packaging path.
+MSI packaging uses WiX 7 and accepts its OSMF EULA noninteractively with `-acceptEula wix7`. `WixToolset.WiXAdditionalTools` is not required. MSIX uses its separate packaging path.
 Official distributions must continue to support ZIP, MSI, and MSIX.
 
 ### Build Everything

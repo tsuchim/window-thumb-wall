@@ -55,7 +55,7 @@ jobs:
 
       - name: Add WiX UI extension
         run: |
-          wix extension add -g "WixToolset.UI.wixext/7.0.0"
+          wix extension add -acceptEula wix7 -g "WixToolset.UI.wixext/7.0.0"
 
       - name: Build architectures
         run: |
@@ -90,6 +90,7 @@ jobs:
             }
 
             wix build packaging\WindowThumbWall.wxs `
+              -acceptEula wix7 `
               -arch $arch `
               -ext WixToolset.UI.wixext `
               -d PublishDir="publish-msi-$arch" `

@@ -36,7 +36,7 @@ Write-Host $wixVersion
 # Ensure WixToolset.UI.wixext is available
 Write-Host ">> Ensuring WiX UI extension..." -ForegroundColor Cyan
 $wixVer = '7.0.0'
-wix extension add -g "WixToolset.UI.wixext/$wixVer"
+wix extension add -acceptEula wix7 -g "WixToolset.UI.wixext/$wixVer"
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to add the WiX UI extension. Confirm that WiX was installed with its license accepted."
 }
@@ -54,6 +54,7 @@ Write-Host ">> Building MSI for $Runtime..." -ForegroundColor Cyan
 if (Test-Path $outMsi) { Remove-Item $outMsi -Force }
 $wixArch = if ($Runtime -like "*arm64*") { "arm64" } else { "x64" }
 wix build "$pkgDir\WindowThumbWall.wxs" `
+    -acceptEula wix7 `
     -arch $wixArch `
     -ext WixToolset.UI.wixext `
     -d PublishDir="$pubDir" `
