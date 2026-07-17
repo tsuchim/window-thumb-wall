@@ -48,6 +48,9 @@ dotnet publish "$root\WindowThumbWall.csproj" `
     -c $Configuration -r $Runtime --self-contained `
     -p:PublishSingleFile=false `
     -o $pubDir
+if ($LASTEXITCODE -ne 0) {
+    throw "MSI publish failed for $Runtime."
+}
 
 # ── 3. Build MSI ─────────────────────────────────────────────
 Write-Host ">> Building MSI for $Runtime..." -ForegroundColor Cyan
@@ -63,6 +66,8 @@ wix build "$pkgDir\WindowThumbWall.wxs" `
 if ($LASTEXITCODE -ne 0) {
     throw "WiX MSI build failed."
 }
+
+& "$PSScriptRoot\verify-msi-payload.ps1" -MsiPath $outMsi
 
 # ── Done ──────────────────────────────────────────────────────
 $size = [math]::Round((Get-Item $outMsi).Length / 1MB, 1)
