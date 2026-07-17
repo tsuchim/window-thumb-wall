@@ -162,8 +162,8 @@ jobs:
           $installed = $false
 
           try {
-            & msiexec.exe /i $msiPath /qn /norestart /l*v $installLog
-            if ($LASTEXITCODE -ne 0) { throw "MSI installation failed with exit code $LASTEXITCODE" }
+            $installProcess = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', $msiPath, '/qn', '/norestart', '/l*v', $installLog) -PassThru -Wait
+            if ($installProcess.ExitCode -ne 0) { throw "MSI installation failed with exit code $($installProcess.ExitCode)" }
             $installed = $true
 
             if (-not (Test-Path -LiteralPath $installedExe)) { throw "Installed executable not found: $installedExe" }
@@ -179,8 +179,8 @@ jobs:
           }
           finally {
             if ($installed) {
-              & msiexec.exe /x $msiPath /qn /norestart /l*v $uninstallLog
-              if ($LASTEXITCODE -ne 0) { throw "MSI uninstall failed with exit code $LASTEXITCODE" }
+              $uninstallProcess = Start-Process -FilePath msiexec.exe -ArgumentList @('/x', $msiPath, '/qn', '/norestart', '/l*v', $uninstallLog) -PassThru -Wait
+              if ($uninstallProcess.ExitCode -ne 0) { throw "MSI uninstall failed with exit code $($uninstallProcess.ExitCode)" }
               if (Test-Path -LiteralPath $installedExe) { throw "Installed executable remains after uninstall: $installedExe" }
             }
           }
