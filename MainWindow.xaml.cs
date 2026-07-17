@@ -298,7 +298,7 @@ public partial class MainWindow : Window
 
         foreach (var saved in state.Slots)
         {
-            string savedTitle = saved.Title.TrimEnd('\0');
+            string savedTitle = (saved.Title ?? string.Empty).TrimEnd('\0');
 
             // 1. Exact match: same process + same title.
             var match = allWindows.FirstOrDefault(w =>
@@ -682,11 +682,11 @@ public partial class MainWindow : Window
         AddWindowToMonitor(info);
     }
 
-    private void AddWindowToMonitor(WindowInfo info, int? insertIndex = null)
+    private bool AddWindowToMonitor(WindowInfo info, int? insertIndex = null)
     {
         // Skip if already assigned.
         foreach (var slot in _slots)
-            if (slot.IsOccupied && slot.SourceHwnd == info.Handle) return;
+            if (slot.IsOccupied && slot.SourceHwnd == info.Handle) return false;
 
         if (insertIndex is int targetIndex)
         {
@@ -713,21 +713,21 @@ public partial class MainWindow : Window
             {
                 if (createdNew)
                     RemoveSlot(sourceIndex);
-                return;
+                return false;
             }
 
             if (sourceIndex != targetIndex)
                 InsertSlot(sourceIndex, targetIndex);
             else
                 RequestStateSave();
-            return;
+            return true;
         }
 
         int target = ManualSlotPlanner.GetAddTarget(
             _slots.Select(slot => slot.IsOccupied ? slot.SourceHwnd : IntPtr.Zero).ToList(),
             info.Handle);
         if (target < 0)
-            return;
+            return false;
 
         // No free slot -> add a new one.
         if (target == _slots.Count)
@@ -736,7 +736,10 @@ public partial class MainWindow : Window
         if (AssignSlot(target, info.Handle, info.Title, info.ProcessName))
         {
             RequestStateSave();
+            return true;
         }
+
+        return false;
     }
 
     private static T? FindVisualParent<T>(DependencyObject? source) where T : DependencyObject
@@ -942,7 +945,9 @@ public partial class MainWindow : Window
             if (!nextInsertIndexByProcess.TryGetValue(info.ProcessName, out int insertIndex))
                 continue;
 
-            AddWindowToMonitor(info, insertIndex);
+            if (!AddWindowToMonitor(info, insertIndex))
+                continue;
+
             AutoAddWindowPlanner.AdvanceInsertIndexes(
                 _autoAddApps,
                 nextInsertIndexByProcess,
