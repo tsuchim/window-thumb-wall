@@ -693,7 +693,7 @@ public partial class MainWindow : Window
             targetIndex = Math.Clamp(targetIndex, 0, _slots.Count);
 
             int sourceIndex = -1;
-            for (int i = 0; i < _slots.Count; i++)
+            for (int i = targetIndex; i < _slots.Count; i++)
             {
                 if (!_slots[i].IsOccupied)
                 {
@@ -716,10 +716,7 @@ public partial class MainWindow : Window
                 return false;
             }
 
-            if (sourceIndex != targetIndex)
-                InsertSlot(sourceIndex, targetIndex);
-            else
-                RequestStateSave();
+            RequestStateSave();
             return true;
         }
 
