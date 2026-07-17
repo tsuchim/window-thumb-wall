@@ -36,5 +36,13 @@ cab*.cab
 # Test output directories
 dist-test*/
 
+# Local generated artifacts
+artifacts/
+dist/
+dist-release-*/
+packaging/AppPackages/
+packaging/BundleArtifacts/
+packaging/local-register/
+
 # Handoff artifacts & logs
 docs/handoff/*-logs/
