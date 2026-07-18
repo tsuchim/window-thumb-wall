@@ -185,7 +185,7 @@ jobs:
             } elseif (-not [Environment]::UserInteractive) {
               # GitHub-hosted runners have no interactive window station; clean up the proven smoke-test process.
               Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
-              $app.WaitForExit()
+              if (-not $app.WaitForExit(10000)) { throw 'Installed application did not exit after headless smoke-test cleanup' }
             } else {
               throw 'Installed application did not accept a clean close request'
             }
