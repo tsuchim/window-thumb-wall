@@ -180,8 +180,13 @@ jobs:
             Start-Sleep -Seconds 3
             $app.Refresh()
             if ($app.HasExited) { throw "Installed application exited during smoke test with code $($app.ExitCode)" }
-            if (-not $app.CloseMainWindow()) { throw 'Installed application did not accept a clean close request' }
-            if (-not $app.WaitForExit(10000)) { throw 'Installed application did not exit after a clean close request' }
+            if ($app.CloseMainWindow()) {
+              if (-not $app.WaitForExit(10000)) { throw 'Installed application did not exit after a clean close request' }
+            } else {
+              # GitHub-hosted runners have no interactive window station; clean up the proven smoke-test process.
+              Stop-Process -Id $app.Id -Force
+              $app.WaitForExit()
+            }
           }
           finally {
             if ($installed) {
