@@ -182,10 +182,12 @@ jobs:
             if ($app.HasExited) { throw "Installed application exited during smoke test with code $($app.ExitCode)" }
             if ($app.CloseMainWindow()) {
               if (-not $app.WaitForExit(10000)) { throw 'Installed application did not exit after a clean close request' }
-            } else {
+            } elseif (-not [Environment]::UserInteractive) {
               # GitHub-hosted runners have no interactive window station; clean up the proven smoke-test process.
-              Stop-Process -Id $app.Id -Force
+              Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
               $app.WaitForExit()
+            } else {
+              throw 'Installed application did not accept a clean close request'
             }
           }
           finally {
