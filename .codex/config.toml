@@ -1,0 +1,16 @@
+# Managed by ai-workbench
+# Source: ai-workbench/templates/project-scaffold/template/.codex/config.toml
+# Codex project runtime adapter.
+#
+# Behavioral policy belongs in AGENTS.md, generated execution contracts,
+# skills, and trusted project hooks. Do not duplicate it here.
+#
+# Model and reasoning effort inherit from the active user/session selection.
+# User-level notification belongs in ~/.codex/config.toml; Codex ignores
+# `notify` in project-local config.
+
+[agents]
+max_depth = 1
+
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"

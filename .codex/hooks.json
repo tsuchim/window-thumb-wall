@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/stop_objective_guard.py\"",
+            "commandWindows": "powershell.exe -NoProfile -Command \"$root = git rev-parse --show-toplevel; py -3 (Join-Path $root '.codex/hooks/stop_objective_guard.py')\"",
+            "timeout": 10,
+            "statusMessage": "Checking durable objective state"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/subagent_return_guard.py\"",
+            "commandWindows": "powershell.exe -NoProfile -Command \"$root = git rev-parse --show-toplevel; py -3 (Join-Path $root '.codex/hooks/subagent_return_guard.py')\"",
+            "timeout": 10,
+            "statusMessage": "Checking bounded subagent return format"
+          }
+        ]
+      }
+    ]
+  }
+}
