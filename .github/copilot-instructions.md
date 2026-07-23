@@ -17,6 +17,14 @@ Language:
 - User report: Japanese
 
 Policy:
+- `policies/github-operations.md` is the canonical GitHub operation policy and
+  supersedes older PR/review/CI wording below if it conflicts. An internal PR
+  for an authorized, locally validated, non-duplicate coherent objective in a
+  user-owned repository is not external publication. An external PR always
+  requires explicit prior owner approval. Do not request, enable, or wait for
+  automatic review; PR lifecycle events and ordinary branch/main/devel pushes
+  must not run integration CI. Record exact local commands/results before final
+  push, PR creation/update, and merge; merge remains separately authorized.
 - Working in a repository does not by itself authorize SSH access, inspection, or changes on remote EC2 app hosts or production hosts.
 - Do not infer remote-host permission from domains, deployment manifests, Compose files, infrastructure docs, or similarly named directories.
 - Remote host work requires explicit user instruction to work on the target host and intended operation.
@@ -45,11 +53,15 @@ Policy:
 - External-facing pull requests require explicit user approval before opening. Do not open external PRs as progress reports or to ask maintainers to debug work we can validate ourselves.
 - Branch lifecycle must be closed when the branch has served its purpose: merge it, close the associated PR, delete local/remote branches when safe, or document the exact retention reason.
 - Do not disclaim responsibility for inherited branches that are part of the current task, repository state, PR, or cleanup surface; inspect, classify, and use, close, preserve with reason, or ask for a decision.
-- Open pull requests only after the required tests for the target flow have passed and the branch is mergeable.
-- Default to ready-for-review pull requests, not draft pull requests, unless the user explicitly asks for a draft.
-- Request GitHub Copilot code review only when GHQ explicitly approves that cost for the PR, or when repository policy requires it and GHQ explicitly approves that cost. Opening a PR does not authorize review requests or Copilot review. If Copilot review is not explicitly approved, do not request it and record that it was not authorized for the job.
-- Before merging any PR, inspect review submissions, inline review comments, unresolved review threads, each unresolved thread's outdated state, and normal issue comments that contain review or blocking feedback. Docs-only PRs are not exempt. Do not merge while any unresolved, non-outdated review thread remains. Address the comment in code/docs and re-check, or ask GHQ to explicitly reject or defer it. Do not silently ignore review comments.
-- Do not request review, request Copilot review, create PRs, or merge PRs unless GHQ explicitly approves the GitHub cost and mainline integration.
+- Open or update an internal Pull Request when the active task or durable job
+  authorizes the repository, branch, target, and coherent objective, after the
+  exact local validation commands and results are recorded. External Pull
+  Requests always require explicit prior owner approval.
+- Never request automatic or human review. Draft/ready state is an integration
+  detail, not a review gate. Unsolicited review feedback is not a prerequisite
+  for merge and does not require thread resolution.
+- Merge only with separate merge authority and fresh local validation at the
+  exact PR head. GitHub Actions and status checks are not integration gates.
 - Treat `AGENTS.md`, skills, role names, job files, and dispatch contracts as the shared core.
 - Treat `.github/agents/*.agent.md`, `.github/instructions/**`, and `.github/hooks/**` as VS Code reinforcement layers.
 - Treat `.codex/config.toml` as the Codex runtime adapter, not the primary cross-runtime policy source.
