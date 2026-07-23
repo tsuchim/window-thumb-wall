@@ -156,3 +156,5 @@ You can generate the metadata locally before tagging.
 ```powershell
 .\packaging\generate-release-metadata.ps1 -Version v0.2.3 -OutputDir dist-test
 ```
+
+If you use a versioned scratch directory such as `dist-release-0.6.5` for local review, treat it as disposable local output. Keep the checked-in metadata inputs under `packaging/`, and remove the generated directory after review if you do not need the snapshot anymore.

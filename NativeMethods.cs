@@ -239,6 +239,8 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     internal static extern IntPtr GetForegroundWindow();
 
+    internal const int HSHELL_WINDOWCREATED = 1;
+    internal const int HSHELL_WINDOWDESTROYED = 2;
     internal const int HSHELL_WINDOWACTIVATED = 4;
     internal const int HSHELL_REDRAW          = 6;
     internal const int HSHELL_HIGHBIT         = 0x8000;
@@ -305,7 +307,7 @@ internal static class NativeMethods
         if (len == 0) return string.Empty;
         var buf = new char[len + 1];
         GetWindowText(hWnd, buf, buf.Length);
-        return new string(buf, 0, len);
+        return new string(buf, 0, len).TrimEnd('\0');
     }
 
     internal static string GetWindowClassName(IntPtr hWnd)

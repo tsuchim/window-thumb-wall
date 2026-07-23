@@ -6,7 +6,7 @@ This document covers local development, packaging, and release-related reference
 - Windows 10 or 11
 - .NET 10 SDK as pinned in [global.json](../global.json)
 - Visual Studio 2022 or later for the easiest local debugging experience
-- WiX Toolset v5 for MSI packaging
+- WiX Toolset v7 for MSI packaging, installed with `winget install --id WiXToolset.WiXCLI --exact --accept-source-agreements --accept-package-agreements`
 
 ## Project Layout
 - [WindowThumbWall.csproj](../WindowThumbWall.csproj): main WPF desktop application
@@ -68,6 +68,28 @@ dotnet build .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release
 dotnet test .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release --no-build
 ```
 
+## Taskbar-Like Automatic Addition Order
+
+Automatic addition has one persistent in-memory ordering tracker for the lifetime of the running application. At startup, the application seeds already-open eligible windows from the available Z-order state as a deterministic best-effort approximation. Windows observed through later Shell Hook create notifications are appended in observed creation order; destroy notifications remove them, so a reused numeric HWND receives a new position.
+
+The tracker is not rebuilt from the changing Z order on refresh. Candidate selection is separate: already monitored HWNDs are excluded before automatic insertion, so automatic maintenance never moves existing slots. Registered applications remain the outer ordering group in their configured registration order, while windows within each group use the tracker order. A window observed while hidden has its position retained until it later becomes eligible for the window list.
+
+Windows does not provide a supported API for enumerating the exact taskbar-item order. Manual taskbar rearrangement after WindowThumbWall starts is therefore not tracked. Do not add Explorer-private COM usage, taskbar scraping, undocumented Explorer internals, or UI Automation to simulate that capability. The tracker itself does not survive restart; saved monitored slots do, and are restored without automatic rearrangement.
+
+The existing WPF-window Shell Hook is the event source. It is registered once after the main HWND exists and deregistered from `Closed`. `HSHELL_WINDOWCREATED` and `HSHELL_WINDOWDESTROYED` only update the tracker; the existing activation, redraw, and flash handling remains on the WPF thread.
+
+### Runtime Acceptance Checklist
+
+Use an isolated state file so normal user configuration is untouched:
+
+```powershell
+$acceptanceRoot = Join-Path $PWD "artifacts\taskbar-auto-add-order-acceptance"
+New-Item -ItemType Directory -Force $acceptanceRoot | Out-Null
+$env:WINDOWTHUMBWALL_STATE_PATH = Join-Path $acceptanceRoot "state.json"
+```
+
+Verify post-start `A, B, C` ordering; closing B then creating D (`A, C, D`); preservation of a manual monitored-slot order; two registered applications created in interleaved order; restart with saved slots; deterministic best-effort ordering for windows that predate startup; and regressions for manual add/removal, application/slot dragging, attention behavior, and clean hook shutdown/reopen. Read the isolated `state.json` as objective slot-order evidence.
+
 ### Packaging Build
 ```powershell
 .\packaging\build-msix.ps1 -Configuration Release
@@ -97,6 +119,27 @@ Notes:
 - `build-and-run-msix.ps1` runs `build-msix.ps1` first and only continues to `install-msix.ps1` when the build succeeds.
 - A pure current-user install is not always enough for signed `.msixbundle` sideloading. When Windows still rejects the bundle with `0x800B0109`, trust the certificate in the local machine store once or enable Developer Mode so the fallback register path can be used.
 - Notification listener features are expected to be tested from the installed MSIX, not from an unpackaged `dotnet run`.
+
+## Local Generated Directories
+Keep `.codex/` if you use Codex workspace-local settings for this repo. It is local tooling state, not an app build artifact.
+
+The directories below are disposable local outputs and are safe to delete when you no longer need the generated contents:
+- `artifacts/`: investigation logs, temporary archives, and ad-hoc local test outputs
+- `dist/` and `dist-release-*/`: locally generated release metadata output directories
+- `packaging/AppPackages/`: local MSIX build output consumed by `build-msix.ps1` and `install-msix.ps1`
+- `packaging/BundleArtifacts/`: local packaging helper outputs
+- `packaging/local-register/`: fallback registration staging created by `install-msix.ps1`
+
+Recommended cleanup points:
+- before branch cleanup
+- before release prep if you want a fresh local packaging state
+- after packaging investigations that produced large local artifacts
+
+Example PowerShell cleanup:
+
+```powershell
+Remove-Item -Recurse -Force artifacts, dist, dist-release-*, packaging\AppPackages, packaging\BundleArtifacts, packaging\local-register
+```
 
 ## Local MSIX Verification Checklist
 Use the checklist below when changing local packaging, install scripts, app identity, attention notifications, or taskbar integration.
@@ -142,6 +185,8 @@ Use the checklist below when changing local packaging, install scripts, app iden
 2. Run `dotnet test WindowThumbWall.Tests\WindowThumbWall.Tests.csproj`.
 
 ## Build Packages
+
+MSI packaging uses WiX 7 and accepts its OSMF EULA noninteractively with `-acceptEula wix7`. `WixToolset.WiXAdditionalTools` is not required. MSIX uses its separate packaging path.
 Official distributions must continue to support ZIP, MSI, and MSIX.
 
 ### Build Everything
@@ -186,4 +231,7 @@ If you want different Japanese and English release text, you can instead create:
 - [capture-architecture-clarification.md](capture-architecture-clarification.md)
 - [notification-attention-design.md](notification-attention-design.md)
 - [code-signing-policy.md](code-signing-policy.md)
+- [Public Privacy Policy (EN)](https://tsuchim.github.io/WindowThumbWall/PRIVACY.html)
+- [Public Privacy Policy (JA)](https://tsuchim.github.io/WindowThumbWall/PRIVACY.ja.html)
 - [PRIVACY.md](../PRIVACY.md)
+- [PRIVACY.ja.md](../PRIVACY.ja.md)

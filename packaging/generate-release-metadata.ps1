@@ -148,7 +148,13 @@ if ($env:GITHUB_SERVER_URL) {
     $serverUrl = $env:GITHUB_SERVER_URL.TrimEnd('/')
 }
 $repositoryUrl = "$serverUrl/$repository"
-if ($isDev) {
+$repositoryParts = $repository.Split('/')
+$pagesPrivacyUrl = if ($repositoryParts.Length -eq 2) {
+    "https://$($repositoryParts[0]).github.io/$($repositoryParts[1])/PRIVACY.html"
+} else {
+    'https://tsuchim.github.io/WindowThumbWall/PRIVACY.html'
+}
+$downloadsSection = if ($isDev) {
     $downloadsSection = [string]::Join("`n", @(
         '## Downloads'
         'Download links are omitted for dev builds. Use the workflow artifacts from the current run instead.'
@@ -190,8 +196,8 @@ $downloadsSection
 $highlightsEn
 
 ---
-For privacy details, see [PRIVACY.md]($repositoryUrl/blob/main/PRIVACY.md).
-"@.Trim()
+For privacy details, see [Privacy Policy]($pagesPrivacyUrl) and [PRIVACY.md]($repositoryUrl/blob/main/PRIVACY.md).
+"@
 
 Write-Utf8NoBomFile -Path (Join-Path $OutputDir 'release-notes.md') -Content $ghNotes
 
