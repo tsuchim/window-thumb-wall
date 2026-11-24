@@ -20,32 +20,22 @@ This document covers local development, packaging, and release-related reference
 
 ## Run Locally
 
-### Visual Studio
+### Deliberate Interactive Use
+When you intentionally want to interact with or debug the desktop app, use Visual Studio:
+
 1. Open [WindowThumbWall.sln](../WindowThumbWall.sln).
 2. Set WindowThumbWall as the startup project.
 3. Press F5 to debug or Ctrl+F5 to run.
 
-### CLI
-```powershell
-dotnet run --project WindowThumbWall.csproj
-```
-
-### Codex "Run" Dialog
-If Codex asks for a command to launch the app, use one of the following:
-
-- Normal local run:
+You can also deliberately launch the unpackaged app from a terminal:
 
 ```powershell
 dotnet run --project WindowThumbWall.csproj
 ```
 
-- Installed-package run for notification listener verification:
+### Unattended Verification
+Use the app and test project CLI commands in [Build And Test Split](#build-and-test-split) for unattended verification. Do not use `dotnet run` or Visual Studio F5 as the default unattended check. The `build-and-run-msix.ps1` script is only for isolated package verification because it installs or replaces the local package and launches the app; no maintained unattended app-launch entrypoint is documented here yet.
 
-```powershell
-.\packaging\build-and-run-msix.ps1 -Configuration Release
-```
-
-Use the MSIX path when you need to verify packaged app identity or OS notification listener behavior. Use `dotnet run` for ordinary local UI work.
 If you start the unpackaged `dotnet run` / `bin\Debug` build, the Settings window now keeps `Reflect OS notifications` disabled and explains that notification attention requires the installed MSIX runtime.
 The installed MSIX build does not use constant notification polling; it scans immediately when notification-change events arrive and keeps a 5-second follow-up reconciliation window for near-term toast updates.
 
@@ -104,8 +94,8 @@ After building the MSIX locally, install the newest signed test package with:
 .\packaging\install-msix.ps1
 ```
 
-### Build, Install, And Launch In One Step
-If you want a single entrypoint for Codex or local repeated runs, use:
+### Isolated Package Build, Install, And Launch
+Use this script only for isolated local MSIX package verification. It builds the package, installs or replaces the local package, and launches WindowThumbWall; it is not a normal or unattended app-launch command.
 
 ```powershell
 .\packaging\build-and-run-msix.ps1 -Configuration Release
@@ -141,7 +131,7 @@ Example PowerShell cleanup:
 Remove-Item -Recurse -Force artifacts, dist, dist-release-*, packaging\AppPackages, packaging\BundleArtifacts, packaging\local-register
 ```
 
-## Local MSIX Verification Checklist
+## Isolated Local MSIX Verification Checklist
 Use the checklist below when changing local packaging, install scripts, app identity, attention notifications, or taskbar integration.
 
 ### Packaging And Versioning
@@ -181,8 +171,9 @@ Use the checklist below when changing local packaging, install scripts, app iden
 3. Toggle fullscreen on and off and confirm the taskbar icon stays on the intended app icon instead of falling back to the generic document icon.
 
 ### Regression Gate
-1. Run `dotnet build WindowThumbWall.csproj`.
-2. Run `dotnet test WindowThumbWall.Tests\WindowThumbWall.Tests.csproj`.
+1. Run `dotnet build .\WindowThumbWall.csproj -c Release`.
+2. Run `dotnet build .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release`.
+3. Run `dotnet test .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release --no-build`.
 
 ## Build Packages
 

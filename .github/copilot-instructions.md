@@ -19,7 +19,15 @@
 
 ## Verification
 
-- 通常の確認は `dotnet build WindowThumbWall.sln` または `dotnet run --project WindowThumbWall.csproj` を使う。
+- 通常の CLI 確認では次の Release build/test コマンドを使う。アプリの起動は、画面を使う開発者が意図して行う場合に限る。
+
+  ```powershell
+  dotnet build .\WindowThumbWall.csproj -c Release
+  dotnet build .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release
+  dotnet test .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release --no-build
+  ```
+
+- MSIX の build には Visual Studio MSBuild が必要な `.wapproj` が含まれるため、`.\packaging\build-msix.ps1 -Configuration Release` を使う。詳細は [開発者ガイド](../docs/developer-guide.md) を参照する。
 - packaging 変更では `.\packaging\build-all.ps1` か個別 build script で 3 形式を維持しているか確認する。
 
 ## Agent observability

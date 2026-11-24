@@ -6,9 +6,11 @@
 
 ## Verification Commands
 
-`dotnet run --project WindowThumbWall.csproj`
-`dotnet build WindowThumbWall.sln`
-`.\packaging\build-all.ps1`
+`dotnet build .\WindowThumbWall.csproj -c Release`
+`dotnet build .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release`
+`dotnet test .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release --no-build`
+
+For packaging all official formats, use `.\packaging\build-all.ps1`. For MSIX packaging alone, use `.\packaging\build-msix.ps1 -Configuration Release`; its `.wapproj` requires Visual Studio MSBuild. See the [developer guide](docs/developer-guide.md) for interactive app use and packaging details.
 
 ## Language
 

@@ -161,14 +161,13 @@ public partial class MainWindow : Window
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        DisposeNotificationListener();
         _timer.Stop();
-        _notificationFollowUpTimer.Stop();
         _stateSaveTimer.Stop();
         _thumbnailSettleTimer.Stop();
         _thumbnailThrottleTimer.Stop();
         _thumbnailRefreshTimer.Stop();
         _stateTrackingEnabled = false;
-        DisposeNotificationListener();
         NativeMethods.DeregisterShellHookWindow(_mainHwnd);
         SaveState();
         foreach (var slot in _slots) slot.Clear();

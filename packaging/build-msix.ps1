@@ -42,8 +42,17 @@ function Get-VisualStudioPackagingToolchain {
         throw "vswhere.exe was not found at '$vswhere'. Install Visual Studio 2022 or later with MSIX/Desktop Bridge packaging tools."
     }
 
-    $rawInstances = & $vswhere -all -prerelease -products * -format json
-    if ($LASTEXITCODE -ne 0) {
+    $previousOutputEncoding = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+        $rawInstances = & $vswhere -all -prerelease -products * -format json -utf8
+        $vswhereExitCode = $LASTEXITCODE
+    }
+    finally {
+        [Console]::OutputEncoding = $previousOutputEncoding
+    }
+
+    if ($vswhereExitCode -ne 0) {
         throw "vswhere.exe failed while locating Visual Studio installations."
     }
 

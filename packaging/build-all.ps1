@@ -10,21 +10,44 @@ param(
 $ErrorActionPreference = "Stop"
 $pkgDir = $PSScriptRoot
 
+function Invoke-PackageBuild {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptPath,
+        [Parameter(Mandatory = $true)]
+        [string]$PackageName
+    )
+
+    # Reset the native status before each child so an earlier command cannot
+    # make a successful child appear to have failed.
+    $global:LASTEXITCODE = 0
+    & $ScriptPath -Configuration $Configuration -Runtime $Runtime
+    $childSucceeded = $?
+    $childExitCode = $LASTEXITCODE
+
+    if ($childExitCode -ne 0) {
+        throw "$PackageName build script failed with exit code $childExitCode."
+    }
+    if (-not $childSucceeded) {
+        throw "$PackageName build script failed."
+    }
+}
+
 Write-Host "========================================" -ForegroundColor White
 Write-Host "  WindowThumbWall — Build All Packages"   -ForegroundColor White
 Write-Host "========================================" -ForegroundColor White
 
 # ── ZIP ──────────────────────────────────────────────────────
 Write-Host "`n>>> [1/3] ZIP <<<" -ForegroundColor Magenta
-& "$pkgDir\build-zip.ps1" -Configuration $Configuration -Runtime $Runtime
+Invoke-PackageBuild -ScriptPath "$pkgDir\build-zip.ps1" -PackageName "ZIP"
 
 # ── MSI ──────────────────────────────────────────────────────
 Write-Host "`n>>> [2/3] MSI <<<" -ForegroundColor Magenta
-& "$pkgDir\build-msi.ps1" -Configuration $Configuration -Runtime $Runtime
+Invoke-PackageBuild -ScriptPath "$pkgDir\build-msi.ps1" -PackageName "MSI"
 
 # ── MSIX ─────────────────────────────────────────────────────
 Write-Host "`n>>> [3/3] MSIX <<<" -ForegroundColor Magenta
-& "$pkgDir\build-msix.ps1" -Configuration $Configuration -Runtime $Runtime
+Invoke-PackageBuild -ScriptPath "$pkgDir\build-msix.ps1" -PackageName "MSIX"
 
 Write-Host "`n========================================" -ForegroundColor Green
 Write-Host "  All packages built successfully!"        -ForegroundColor Green
