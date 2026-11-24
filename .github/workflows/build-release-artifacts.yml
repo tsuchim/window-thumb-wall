@@ -12,9 +12,18 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      tag: ${{ steps.release_identity.outputs.tag }}
+      tag_object: ${{ steps.release_identity.outputs.tag_object }}
+      commit: ${{ steps.release_identity.outputs.commit }}
+      tree: ${{ steps.release_identity.outputs.tree }}
 
     env:
       VERSION: ''
@@ -23,14 +32,80 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify signed tag and freeze release identity
+        id: release_identity
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          EXPECTED_REVISION: ${{ github.sha }}
+          EVENT_REF: ${{ github.event.ref }}
+          EVENT_CREATED: ${{ github.event.created }}
+          EVENT_DELETED: ${{ github.event.deleted }}
+          EVENT_FORCED: ${{ github.event.forced }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $commit = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Could not resolve checked-out commit.' }
+          $tree = (& git rev-parse 'HEAD^{tree}').Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Could not resolve checked-out source tree.' }
+          $tag = ''
+          $tagObject = ''
+
+          if ($env:EVENT_NAME -eq 'push' -and $env:GITHUB_REF -like 'refs/tags/*') {
+            $tag = $env:REF_NAME
+            if ($env:EVENT_REF -cne "refs/tags/$tag" -or $env:EVENT_CREATED -ne 'true' -or
+                $env:EVENT_DELETED -eq 'true' -or $env:EVENT_FORCED -eq 'true') {
+              throw 'Release publication requires a new, non-force tag creation event.'
+            }
+            $signerPath = Join-Path $env:RUNNER_TEMP 'release-allowed-signers'
+            $trustedSigners = & git show 'refs/remotes/origin/main:.github/release-allowed-signers'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not read the trusted release signer list from origin/main.' }
+            if (-not $trustedSigners -or [string]::IsNullOrWhiteSpace(($trustedSigners -join ''))) {
+              throw 'The trusted release signer list from origin/main is empty.'
+            }
+            Set-Content -LiteralPath $signerPath -Value $trustedSigners -Encoding utf8NoBOM
+            if (-not (Test-Path -LiteralPath $signerPath) -or (Get-Item -LiteralPath $signerPath).Length -eq 0) {
+              throw 'Could not materialize the trusted release signer list.'
+            }
+            $verified = & .\packaging\verify-release-tag.ps1 -TagRef "refs/tags/$tag" -ExpectedRevision $env:EXPECTED_REVISION -AllowedSignersPath $signerPath
+            if (-not $?) { throw 'Signed release tag verification failed.' }
+            foreach ($field in 'Tag', 'TagObject', 'Commit', 'Tree') {
+              if (-not $verified.PSObject.Properties[$field]) { throw "Release tag verifier omitted $field." }
+            }
+            if ($verified.Tag -cne "refs/tags/$tag" -or $verified.Commit -cne $commit -or $verified.Tree -cne $tree) {
+              throw 'Verified release identity does not match the frozen checkout.'
+            }
+            $tagObject = [string]$verified.TagObject
+            $remoteLine = & git ls-remote --exit-code origin "refs/tags/$tag"
+            if ($LASTEXITCODE -ne 0 -or $remoteLine -cne "$tagObject`trefs/tags/$tag") {
+              throw 'The authoritative remote tag does not match the frozen tag object.'
+            }
+            [xml]$project = Get-Content -LiteralPath WindowThumbWall.csproj
+            if ([string]$project.Project.PropertyGroup.Version -cne $tag.Substring(1)) {
+              throw 'The project package version does not match the release tag.'
+            }
+            $release = Invoke-WebRequest -Uri "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" -Headers @{Authorization="Bearer $env:GH_TOKEN"} -SkipHttpErrorCheck
+            if ($release.StatusCode -ne 404) { throw "Expected no existing GitHub release ($($release.StatusCode))." }
+          }
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "tag_object=$tagObject" >> $env:GITHUB_OUTPUT
+          "commit=$commit" >> $env:GITHUB_OUTPUT
+          "tree=$tree" >> $env:GITHUB_OUTPUT
+          Write-Host "Frozen checkout commit $commit tree $tree; tag '$tag'."
 
       - name: Determine version
+        env:
+          VERIFIED_TAG: ${{ steps.release_identity.outputs.tag }}
         run: |
-          if ($env:GITHUB_REF -match '^refs/tags/(v.+)$') {
-            $ver = $Matches[1]
-          } else {
-            $ver = 'dev'
-          }
+          $ver = if ($env:VERIFIED_TAG) { $env:VERIFIED_TAG } else { 'dev' }
           "VERSION=$ver" | Out-File $env:GITHUB_ENV -Append
           Write-Host "VERSION=$ver"
 
@@ -44,6 +119,16 @@ jobs:
 
       - name: Restore
         run: dotnet restore WindowThumbWall.csproj
+
+      - name: Build application and test project
+        shell: pwsh
+        run: |
+          dotnet build .\WindowThumbWall.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Application build failed.' }
+          dotnet build .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Test project build failed.' }
+          dotnet test .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj -c Release --no-build
+          if ($LASTEXITCODE -ne 0) { throw 'Test project tests failed.' }
 
       - name: Install WiX
         run: |
@@ -207,6 +292,24 @@ jobs:
             }
           }
 
+      - name: Write release provenance
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.release_identity.outputs.tag }}
+          RELEASE_TAG_OBJECT: ${{ steps.release_identity.outputs.tag_object }}
+          RELEASE_COMMIT: ${{ steps.release_identity.outputs.commit }}
+          RELEASE_TREE: ${{ steps.release_identity.outputs.tree }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dotnetVersion = (& dotnet --version).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Could not record the .NET SDK version.' }
+          $wixVersion = (& wix --version | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Could not record the WiX version.' }
+          $toolchain = "runner=$env:ImageOS/$env:ImageVersion;dotnet=$dotnetVersion;wix=$wixVersion"
+          .\packaging\release-artifact-manifest.ps1 -Mode Write -Directory $env:DIST_DIR -Tag $env:RELEASE_TAG -TagObject $env:RELEASE_TAG_OBJECT -Commit $env:RELEASE_COMMIT -Tree $env:RELEASE_TREE -Toolchain $toolchain
+          if (-not (Test-Path -LiteralPath (Join-Path $env:DIST_DIR 'release-provenance.json'))) { throw 'Release provenance was not written.' }
+
       - name: Upload MSI lifecycle logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -219,7 +322,23 @@ jobs:
 
       # ── Upload artifacts ───────────────────────────────────────
       # These unsigned artifacts will be signed via SignPath in a future step.
-      - name: Upload unsigned artifacts
+      - name: Upload unsigned tag artifacts
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-artifacts
+          path: |
+            ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-*.zip
+            ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-*.msi
+            ${{ env.DIST_DIR }}/WindowThumbWall-${{ env.VERSION }}-win-*.msix
+            ${{ env.DIST_DIR }}/release-notes.md
+            ${{ env.DIST_DIR }}/store-listing-*.md
+            ${{ env.DIST_DIR }}/store-whats-new-*.md
+            ${{ env.DIST_DIR }}/release-provenance.json
+          if-no-files-found: error
+
+      - name: Upload unsigned development artifacts
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: unsigned-artifacts
@@ -232,9 +351,27 @@ jobs:
             ${{ env.DIST_DIR }}/store-whats-new-*.md
           if-no-files-found: error
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/')
+  store:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: build
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/release-to-store.yml
+    with:
+      tag: ${{ needs.build.outputs.tag }}
+      tag_object: ${{ needs.build.outputs.tag_object }}
+      commit: ${{ needs.build.outputs.commit }}
+      tree: ${{ needs.build.outputs.tree }}
+    secrets:
+      AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+      SELLER_ID: ${{ secrets.SELLER_ID }}
+      AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+      AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: [build, store]
     runs-on: windows-latest
     permissions:
       contents: write
@@ -242,16 +379,62 @@ jobs:
       DIST_DIR: dist
 
     steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Download unsigned artifacts
         uses: actions/download-artifact@v4
         with:
           name: unsigned-artifacts
           path: ${{ env.DIST_DIR }}
 
+      - name: Refuse to overwrite an existing GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = Invoke-WebRequest -Uri "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" -Headers @{Authorization="Bearer $env:GH_TOKEN"} -SkipHttpErrorCheck
+          if ($release.StatusCode -ne 404) { throw "Expected no existing GitHub release ($($release.StatusCode))." }
+
+      - name: Verify release identity, remote tag and provenance
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          RELEASE_TAG_OBJECT: ${{ needs.build.outputs.tag_object }}
+          RELEASE_COMMIT: ${{ needs.build.outputs.commit }}
+          RELEASE_TREE: ${{ needs.build.outputs.tree }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $signerPath = Join-Path $env:RUNNER_TEMP 'release-allowed-signers'
+          $trustedSigners = & git show 'refs/remotes/origin/main:.github/release-allowed-signers'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read the trusted release signer list from origin/main.' }
+          if (-not $trustedSigners -or [string]::IsNullOrWhiteSpace(($trustedSigners -join ''))) { throw 'Trusted release signer list is empty.' }
+          Set-Content -LiteralPath $signerPath -Value $trustedSigners -Encoding utf8NoBOM
+          if (-not (Test-Path -LiteralPath $signerPath) -or (Get-Item -LiteralPath $signerPath).Length -eq 0) { throw 'Trusted release signer list was not materialized.' }
+          $verified = & .\packaging\verify-release-tag.ps1 -TagRef "refs/tags/$env:RELEASE_TAG" -ExpectedRevision $env:RELEASE_COMMIT -ExpectedTagObject $env:RELEASE_TAG_OBJECT -ExpectedTree $env:RELEASE_TREE -AllowedSignersPath $signerPath
+          if (-not $?) { throw 'Signed release tag verification failed.' }
+          $remoteLine = & git ls-remote origin "refs/tags/$env:RELEASE_TAG"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read the authoritative remote tag ref.' }
+          $localTagObject = (& git rev-parse "refs/tags/$env:RELEASE_TAG").Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the local named release tag.' }
+          $remoteFields = @($remoteLine -split '\s+' | Where-Object { $_ })
+          if ($remoteFields.Count -ne 2 -or $remoteFields[1] -cne "refs/tags/$env:RELEASE_TAG" -or $remoteFields[0] -cne $env:RELEASE_TAG_OBJECT -or $localTagObject -cne $env:RELEASE_TAG_OBJECT) {
+            throw 'The local and authoritative remote tag object do not match the frozen release tag.'
+          }
+          .\packaging\release-artifact-manifest.ps1 -Mode Verify -Directory $env:DIST_DIR -Tag $env:RELEASE_TAG -TagObject $env:RELEASE_TAG_OBJECT -Commit $env:RELEASE_COMMIT -Tree $env:RELEASE_TREE
+
       - name: Create draft GitHub Release and upload assets
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b
         with:
-          name: WindowThumbWall ${{ env.GITHUB_REF_NAME }}
+          tag_name: ${{ needs.build.outputs.tag }}
+          target_commitish: ${{ needs.build.outputs.commit }}
+          name: WindowThumbWall ${{ needs.build.outputs.tag }}
           body_path: ${{ env.DIST_DIR }}/release-notes.md
           draft: true
           files: |

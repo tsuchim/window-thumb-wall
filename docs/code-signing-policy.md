@@ -23,16 +23,18 @@ This is a single-maintainer project. All roles are held by **@tsuchim**.
 
 ## Signing Process
 
-1. Release builds are triggered by tags matching `v*`.
-   Maintainers **must** GPG-sign release tags (`git tag -s vX.Y`).
-   > Note: GPG signature is an operational requirement.
-   > The workflow does not technically verify tag signatures.
-2. Builds run on **GitHub Actions** (`windows-latest`).
-3. CI builds produce **ZIP**, **MSI**, and **MSIX** artifacts and upload them
-   as workflow artifacts.
-4. Publishing to **GitHub Releases** is currently performed **manually**:
-   download CI-built artifacts from the workflow run and attach them as
-   release assets.
+1. An ordinary push of an annotated tag named `vX.Y.Z` starts the release.
+   Sign it using the repository's trusted SSH signing key. The trust list is
+   [release-allowed-signers](../.github/release-allowed-signers) on protected main.
+   The workflow verifies the signature, tag object, target commit and source tree.
+2. GitHub Actions runs the required Windows tests and builds both architectures.
+   Its release provenance lists the toolchain, package paths and SHA-256 hashes.
+3. After those checks pass, CI builds and submits the Microsoft Store package.
+   A successful submission and a second verification of the tag and artifacts
+   allow CI to create the draft GitHub Release with the CI-built ZIP, MSI
+   and MSIX assets.
+4. The maintainer verifies the draft and promotes it to a public GitHub Release.
+   Microsoft Store certification proceeds separately after submission.
 5. **No locally or manually-built binaries are distributed.**
 6. Once SignPath integration is complete, CI artifacts will be submitted to
    SignPath for signing before publication.
@@ -40,7 +42,7 @@ This is a single-maintainer project. All roles are held by **@tsuchim**.
 ## Security
 
 - GitHub MFA is enabled for all maintainers.
-- Release tags **must** be GPG-signed (`git tag -s`).
+- Release tags require a verified annotated SSH signature from the protected trust list.
 - Workflow permissions follow the principle of least privilege.
 
 ## Privacy
