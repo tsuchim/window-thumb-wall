@@ -128,8 +128,48 @@ jobs:
           "NUGET_PACKAGES=$env:NUGET_PACKAGES" >> $env:GITHUB_ENV
           "NUGET_HTTP_CACHE_PATH=$env:NUGET_HTTP_CACHE_PATH" >> $env:GITHUB_ENV
 
+          if ($env:GITHUB_EVENT_NAME -ne 'workflow_dispatch') {
+            throw 'The restore diagnostic branch is development-only.'
+          }
+
+          function Show-TestRestoreState([string]$label) {
+            foreach ($name in 'project.assets.json', 'project.nuget.cache') {
+              $path = Join-Path './WindowThumbWall.Tests/obj' $name
+              if (-not (Test-Path -LiteralPath $path)) {
+                Write-Host "$label missing $name"
+                continue
+              }
+
+              $data = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
+              foreach ($entry in @($data.logs) | Select-Object -First 10) {
+                if ($null -eq $entry) { continue }
+                $message = [string]$entry.message
+                $message = $message -replace 'https?://[^\s''"]+', '[feed URL]'
+                if ($message.Length -gt 360) { $message = $message.Substring(0, 360) }
+                Write-Host "$label $name $($entry.code) $($entry.level): $message"
+              }
+              if ($data.project.frameworks) {
+                foreach ($framework in $data.project.frameworks.PSObject.Properties) {
+                  $names = @($framework.Value.dependencies.PSObject.Properties.Name)
+                  Write-Host "$label target $($framework.Name) direct packages: $($names -join ', ')"
+                }
+              }
+              if ($data.PSObject.Properties.Name -contains 'success') {
+                Write-Host "$label cache success: $($data.success)"
+              }
+            }
+          }
+
           dotnet restore .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj --configfile .\NuGet.Config --verbosity normal
-          if ($LASTEXITCODE -ne 0) { throw 'Dependency restore failed.' }
+          $standard = $LASTEXITCODE
+          Show-TestRestoreState 'Standard'
+          if ($standard -ne 0) {
+            Write-Host "Standard restore exit: $standard"
+            dotnet restore .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj --configfile .\NuGet.Config --force-evaluate --verbosity normal -p:RestoreUseStaticGraphEvaluation=true
+            $static = $LASTEXITCODE
+            Show-TestRestoreState 'Static graph'
+            if ($static -ne 0) { throw "Static graph dependency restore failed with exit $static." }
+          }
 
       - name: Build application and test project
         shell: pwsh
