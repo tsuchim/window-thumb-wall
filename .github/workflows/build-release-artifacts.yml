@@ -140,7 +140,12 @@ jobs:
                 continue
               }
 
-              $data = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
+              try {
+                $data = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json -AsHashtable
+              } catch {
+                Write-Host "$label cannot parse $name"
+                continue
+              }
               foreach ($entry in @($data.logs) | Select-Object -First 10) {
                 if ($null -eq $entry) { continue }
                 $message = [string]$entry.message
@@ -149,15 +154,26 @@ jobs:
                 Write-Host "$label $name $($entry.code) $($entry.level): $message"
               }
               if ($data.project.frameworks) {
-                foreach ($framework in $data.project.frameworks.PSObject.Properties) {
-                  $names = @($framework.Value.dependencies.PSObject.Properties.Name)
-                  Write-Host "$label target $($framework.Name) direct packages: $($names -join ', ')"
+                foreach ($framework in $data.project.frameworks.GetEnumerator()) {
+                  $names = @($framework.Value.dependencies.Keys)
+                  Write-Host "$label target [$($framework.Key)] direct packages: $($names -join ', ')"
                 }
               }
-              if ($data.PSObject.Properties.Name -contains 'success') {
+              if ($data.ContainsKey('success')) {
                 Write-Host "$label cache success: $($data.success)"
               }
             }
+          }
+
+          $testProject = './WindowThumbWall.Tests/WindowThumbWall.Tests.csproj'
+          $projectHash = (Get-FileHash -LiteralPath $testProject -Algorithm SHA256).Hash
+          Write-Host "Test project SHA256: $projectHash"
+          $graph = dotnet msbuild $testProject -getProperty:TargetFramework,TargetFrameworkMoniker,TargetPlatformMoniker,RestoreProjectStyle -getItem:PackageReference,ProjectReference
+          if ($LASTEXITCODE -eq 0) {
+            $evaluated = $graph | Out-String | ConvertFrom-Json -AsHashtable
+            $p = $evaluated.Properties
+            $deps = @($evaluated.Items.PackageReference | ForEach-Object { $_.Identity })
+            Write-Host "Evaluated test framework [$($p.TargetFramework)], moniker [$($p.TargetFrameworkMoniker)], platform [$($p.TargetPlatformMoniker)], style [$($p.RestoreProjectStyle)], packages [$($deps -join ', ')]"
           }
 
           dotnet restore .\WindowThumbWall.Tests\WindowThumbWall.Tests.csproj --configfile .\NuGet.Config --verbosity normal
