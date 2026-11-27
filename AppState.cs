@@ -27,6 +27,7 @@ internal sealed class AppState
     public List<string> AutoAddApps { get; set; } = [];
     public WindowGeometry? Geometry { get; set; }
     public bool IsFullScreen { get; set; }
+    public bool IsLeftPanelCollapsed { get; set; }
     public double LeftPanelWidth { get; set; }
     public double AppListHeight { get; set; }
     public bool EnableOsNotificationAttention { get; set; }

@@ -40,6 +40,7 @@ public partial class MainWindow : Window
     private ShortcutGuideWindow? _shortcutGuideWindow;
 
     private bool _isFullScreen;
+    private bool _isLeftPanelCollapsed;
     private WindowChoice? _windowChoice;
     private sealed record WindowChoice(Guid SlotId);
     private readonly WindowSlotRules _slotRules = new();
@@ -241,10 +242,11 @@ public partial class MainWindow : Window
             : new Rect(Left, Top, Width, Height);
 
         _state.IsFullScreen = _isFullScreen;
+        _state.IsLeftPanelCollapsed = _isLeftPanelCollapsed;
         _state.Geometry = WindowGeometry.FromBounds(bounds.Left, bounds.Top, bounds.Width, bounds.Height,
             !_isFullScreen && WindowState == WindowState.Maximized);
         _state.LeftPanelWidth = GetPersistedLength(
-            _isFullScreen ? _savedLeftColWidth : LeftColumnDefinition.Width,
+            _isFullScreen || _isLeftPanelCollapsed ? _savedLeftColWidth : LeftColumnDefinition.Width,
             LeftPanel.ActualWidth);
         _state.AppListHeight = GetPersistedLength(AppListRowDefinition.Height, AppList.ActualHeight);
         _state.EnableOsNotificationAttention = _notificationAttentionRequested;
@@ -320,6 +322,8 @@ public partial class MainWindow : Window
 
         if (_pendingRestore.AppListHeight > 80)
             AppListRowDefinition.Height = new GridLength(_pendingRestore.AppListHeight);
+
+        SetLeftPanelCollapsed(_pendingRestore.IsLeftPanelCollapsed);
     }
 
     private static double GetPersistedLength(GridLength gridLength, double actualFallback)
@@ -388,7 +392,9 @@ public partial class MainWindow : Window
                 EndWindowChoice();
                 e.Handled = true;
                 break;
-            case Key.Enter when _isFullScreen || !FilterBox.IsFocused:
+            case Key.Enter when e.OriginalSource != CollapseLeftPanelButton &&
+                e.OriginalSource != ExpandLeftPanelButton && e.OriginalSource != StateRetryButton &&
+                (_isFullScreen || !FilterBox.IsFocused):
                 ToggleFullScreen();
                 e.Handled = true;
                 break;
@@ -1048,6 +1054,7 @@ public partial class MainWindow : Window
 
         if (_isFullScreen)
             ToggleFullScreen();
+        SetLeftPanelCollapsed(false);
         _windowChoice = new WindowChoice(slotId);
         FilterLabel.Text = LocalizedText.Get("label.chooseWindowForSlot");
         RuleNotice.Visibility = Visibility.Collapsed;
@@ -2077,9 +2084,51 @@ public partial class MainWindow : Window
         }
     }
 
-    // Fullscreen
+    // Sidebar and fullscreen
 
     private void FullScreenButton_Click(object sender, RoutedEventArgs e) => ToggleFullScreen();
+
+    private void CollapseLeftPanelButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_windowChoice != null)
+            EndWindowChoice();
+
+        SetLeftPanelCollapsed(true);
+    }
+
+    private void ExpandLeftPanelButton_Click(object sender, RoutedEventArgs e) =>
+        SetLeftPanelCollapsed(false);
+
+    private void SetLeftPanelCollapsed(bool collapsed)
+    {
+        if (_isLeftPanelCollapsed == collapsed)
+            return;
+
+        if (collapsed)
+            RememberExpandedSidebar();
+
+        _isLeftPanelCollapsed = collapsed;
+        ApplySidebarLayout();
+        RequestStateSave();
+    }
+
+    private void RememberExpandedSidebar()
+    {
+        _savedLeftColWidth = LeftColumnDefinition.Width;
+        _savedSplitterColWidth = RootGrid.ColumnDefinitions[1].Width;
+    }
+
+    private void ApplySidebarLayout()
+    {
+        bool expanded = !_isFullScreen && !_isLeftPanelCollapsed;
+        bool showExpandButton = !_isFullScreen && _isLeftPanelCollapsed;
+        LeftPanel.Visibility = Splitter.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+        ExpandLeftPanelButton.Visibility = showExpandButton ? Visibility.Visible : Visibility.Collapsed;
+        RootGrid.ColumnDefinitions[1].Width = expanded ? _savedSplitterColWidth : GridLength.Auto;
+        // The collapsed column sizes itself to the expand button; fullscreen has no rail.
+        LeftColumnDefinition.Width = expanded ? _savedLeftColWidth
+            : showExpandButton ? GridLength.Auto : new GridLength(0);
+    }
 
     private void ToggleFullScreen()
     {
@@ -2087,23 +2136,14 @@ public partial class MainWindow : Window
         {
             WindowStyle = _savedWindowStyle;
             WindowState = _savedWindowState;
-            LeftPanel.Visibility = Visibility.Visible;
-            Splitter.Visibility = Visibility.Visible;
-            RootGrid.ColumnDefinitions[0].Width = _savedLeftColWidth;
-            RootGrid.ColumnDefinitions[1].Width = _savedSplitterColWidth;
             _isFullScreen = false;
         }
         else
         {
             _savedWindowStyle = WindowStyle;
             _savedWindowState = WindowState;
-            _savedLeftColWidth = RootGrid.ColumnDefinitions[0].Width;
-            _savedSplitterColWidth = RootGrid.ColumnDefinitions[1].Width;
-
-            LeftPanel.Visibility = Visibility.Collapsed;
-            Splitter.Visibility = Visibility.Collapsed;
-            RootGrid.ColumnDefinitions[0].Width = new GridLength(0);
-            RootGrid.ColumnDefinitions[1].Width = new GridLength(0);
+            if (!_isLeftPanelCollapsed)
+                RememberExpandedSidebar();
 
             if (WindowState == WindowState.Maximized)
                 WindowState = WindowState.Normal;
@@ -2111,6 +2151,7 @@ public partial class MainWindow : Window
             WindowState = WindowState.Maximized;
             _isFullScreen = true;
         }
+        ApplySidebarLayout();
         RequestThumbnailUpdate();
         ScheduleThumbnailSettle();
         RequestStateSave();

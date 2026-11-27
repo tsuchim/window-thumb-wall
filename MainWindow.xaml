@@ -8,6 +8,10 @@
         WindowStartupLocation="CenterScreen"
         Background="#1E1E1E">
     <Grid x:Name="RootGrid">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="LeftColumnDefinition" Width="260"/>
             <ColumnDefinition Width="Auto"/>
@@ -144,12 +148,18 @@
                     </DataTemplate>
                 </Button.ContentTemplate>
             </Button>
-            <StackPanel Grid.Row="6" x:Name="StateStatusPanel" Visibility="Collapsed" Margin="0,6,0,0">
-                <TextBlock x:Name="StateNotice" Foreground="#FFC074" TextWrapping="Wrap"/>
-                <Button x:Name="StateRetryButton" Click="StateRetryButton_Click"
-                        HorizontalAlignment="Left" Padding="8,3" Margin="0,5,0,0"/>
-            </StackPanel>
+            <Button Grid.Row="6" x:Name="CollapseLeftPanelButton"
+                    Click="CollapseLeftPanelButton_Click"
+                    Background="#444" Foreground="White" BorderThickness="0"
+                    Padding="8,6" Margin="0,6,0,0" FontSize="13" Cursor="Hand"/>
         </Grid>
+
+        <Button Grid.Column="0" x:Name="ExpandLeftPanelButton"
+                Click="ExpandLeftPanelButton_Click" Content="&gt;"
+                Width="32" Height="32" Margin="4"
+                HorizontalAlignment="Left" VerticalAlignment="Top"
+                Background="#444" Foreground="White" BorderThickness="0"
+                FontSize="18" Padding="0" Cursor="Hand" Visibility="Collapsed"/>
 
         <GridSplitter Grid.Column="1" x:Name="Splitter" Width="4"
                       HorizontalAlignment="Center" VerticalAlignment="Stretch"
@@ -157,5 +167,12 @@
 
         <!-- Right panel: flexible thumbnail grid (rows/cols managed in code-behind) -->
         <Grid Grid.Column="2" x:Name="ThumbGrid" Margin="4"/>
+
+        <StackPanel Grid.Row="1" Grid.ColumnSpan="3" x:Name="StateStatusPanel"
+                    Visibility="Collapsed" Margin="6,4,6,6">
+            <TextBlock x:Name="StateNotice" Foreground="#FFC074" TextWrapping="Wrap"/>
+            <Button x:Name="StateRetryButton" Click="StateRetryButton_Click"
+                    HorizontalAlignment="Left" Padding="8,3" Margin="0,5,0,0"/>
+        </StackPanel>
     </Grid>
 </Window>

@@ -22,6 +22,13 @@ For pull requests with a recorded automated review request, this section governs
 - Check the current review state and final head immediately before performing the normal protected merge. If the requested review fails or is unavailable, keep the PR open and restore the review route.
 - For release preparation, run the hosted release rehearsal on the exact candidate before opening its PR. Before merge, verify the final head's rehearsal and review. Follow the [release procedure](docs/releasing.md) for the separate rehearsal on protected main and the tag gate.
 
+## External contributions
+
+Follow the [contribution and integration policy](docs/developer-guide.md#contribution-and-integration).
+Keep the contributor's original commits in the original pull request. After
+the final review and verification, use a signed normal merge and verify its
+signature and ancestry on `main`.
+
 ## Maintained verification commands
 
 ~~~powershell

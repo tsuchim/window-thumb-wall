@@ -2,6 +2,9 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Interop;
 
 namespace WindowThumbWall.Tests;
 
@@ -60,6 +63,7 @@ public sealed class AppStateTests : IDisposable
         AppState state = new()
         {
             AutoAddApps = ["chrome", "outlook"],
+            IsLeftPanelCollapsed = true,
             LeftPanelWidth = 320,
             AppListHeight = 240,
             EnableOsNotificationAttention = true,
@@ -90,6 +94,7 @@ public sealed class AppStateTests : IDisposable
         AppState loaded = AppState.Load();
 
         Assert.Equal(["chrome", "outlook"], loaded.AutoAddApps);
+        Assert.True(loaded.IsLeftPanelCollapsed);
         Assert.Equal(320, loaded.LeftPanelWidth);
         Assert.Equal(240, loaded.AppListHeight);
         Assert.True(loaded.EnableOsNotificationAttention);
@@ -430,6 +435,215 @@ public sealed class AppStateTests : IDisposable
         Assert.Equal(slot.RuleId, Assert.Single(saved.SpecificWindowRules).RuleId);
     }
 
+    [Fact]
+    public void CollapsedSidebarWidensWallAndRestoresPreviousWidthAfterRestart()
+    {
+        WriteState("""{"LeftPanelWidth":320}""");
+
+        RestoreAndClose(Visibility.Collapsed, inspect: window =>
+        {
+            var root = (Grid)window.Content;
+            var wall = (Grid)window.FindName("ThumbGrid");
+            var expand = (Button)window.FindName("ExpandLeftPanelButton");
+            var fullscreen = (Button)window.FindName("FullScreenButton");
+            Arrange(root);
+            double expandedWallWidth = wall.ActualWidth;
+            WindowStyle windowStyle = window.WindowStyle;
+
+            ((Button)window.FindName("CollapseLeftPanelButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Arrange(root);
+            Assert.Equal(40, root.ColumnDefinitions[0].ActualWidth);
+            Assert.True(wall.ActualWidth > expandedWallWidth);
+            Assert.Equal(windowStyle, window.WindowStyle);
+
+            fullscreen.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(Visibility.Collapsed, expand.Visibility);
+            fullscreen.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(Visibility.Visible, expand.Visibility);
+        });
+
+        AppState saved = AppState.Load();
+        Assert.True(saved.IsLeftPanelCollapsed);
+        Assert.Equal(320, saved.LeftPanelWidth);
+        RestoreAndClose(Visibility.Collapsed, inspect: window =>
+        {
+            var sidebar = (Grid)window.FindName("LeftPanel");
+            var expand = (Button)window.FindName("ExpandLeftPanelButton");
+            Assert.Equal(Visibility.Collapsed, sidebar.Visibility);
+            Assert.Equal(Visibility.Visible, expand.Visibility);
+            expand.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(Visibility.Visible, sidebar.Visibility);
+            Assert.Equal(Visibility.Collapsed, expand.Visibility);
+            Assert.Equal(new GridLength(320), ((Grid)window.Content).ColumnDefinitions[0].Width);
+        });
+    }
+
+    [Fact]
+    public void SaveFailureAfterSidebarCollapse_LeavesWarningAndRetryReachableAndRecovers()
+    {
+        WriteState("""{"LeftPanelWidth":320}""");
+
+        RestoreAndClose(Visibility.Collapsed, inspect: window =>
+        {
+            var root = (Grid)window.Content;
+            var leftPanel = (Grid)window.FindName("LeftPanel");
+            var stateStatusPanel = (StackPanel)window.FindName("StateStatusPanel");
+            var notice = (TextBlock)window.FindName("StateNotice");
+            var retry = (Button)window.FindName("StateRetryButton");
+            ((Button)window.FindName("CollapseLeftPanelButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Arrange(root);
+
+            using (var stateLock = File.Open(_statePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                Invoke(window, "SaveState");
+                Arrange(root);
+
+                Assert.Equal(Visibility.Visible, stateStatusPanel.Visibility);
+                Assert.Equal(Visibility.Visible, notice.Visibility);
+                Assert.Equal(Visibility.Visible, retry.Visibility);
+                Assert.False(IsDescendantOf(stateStatusPanel, leftPanel),
+                    "The save warning must be hosted outside the collapsible sidebar.");
+                Assert.True(HasVisibleAncestors(notice), "The save warning must remain visible after the sidebar collapses.");
+                Assert.True(HasVisibleAncestors(retry), "The save retry button must remain reachable after the sidebar collapses.");
+                Assert.True(retry.IsEnabled);
+                Assert.True(retry.ActualWidth > 0 && retry.ActualHeight > 0,
+                    "The save retry button must have an arranged hit target.");
+            }
+
+            typeof(MainWindow).GetField("_stateTrackingEnabled", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(window, true);
+            retry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(Visibility.Collapsed, stateStatusPanel.Visibility);
+            Assert.True(File.Exists(_statePath));
+            Assert.True(AppState.Load().IsLeftPanelCollapsed);
+            Assert.Equal(320, AppState.Load().LeftPanelWidth);
+        });
+    }
+
+    [Fact]
+    public void EnterOnSidebarAndRetryButtonsDoesNotConsumeFullscreenShortcut()
+    {
+        RestoreAndClose(Visibility.Collapsed, inspect: window =>
+        {
+            IntPtr ownerHandle = new WindowInteropHelper(window).EnsureHandle();
+            using var inputSource = new HwndSource(new HwndSourceParameters("WindowThumbWall.Tests.Input")
+            {
+                ParentWindow = ownerHandle,
+                WindowStyle = 0x40000000,
+                Width = 1,
+                Height = 1
+            });
+            var collapse = (Button)window.FindName("CollapseLeftPanelButton");
+            var expand = (Button)window.FindName("ExpandLeftPanelButton");
+            var retry = (Button)window.FindName("StateRetryButton");
+            var wall = (Grid)window.FindName("ThumbGrid");
+            Invoke(window, "SetStateNotice", "state.saveFailed");
+
+            foreach (Button button in new[] { collapse, expand, retry })
+            {
+                KeyEventArgs buttonEnter = RaiseEnter(button, inputSource);
+                Assert.Same(button, buttonEnter.OriginalSource);
+                Assert.False(buttonEnter.Handled, $"Enter on {button.Name} must remain available to the button.");
+                Assert.False(GetPrivateField<bool>(window, "_isFullScreen"));
+            }
+
+            KeyEventArgs wallEnter = RaiseEnter(wall, inputSource);
+            Assert.Same(wall, wallEnter.OriginalSource);
+            Assert.True(wallEnter.Handled, "Enter from the wall must keep the existing fullscreen shortcut.");
+            Assert.True(GetPrivateField<bool>(window, "_isFullScreen"));
+
+            KeyEventArgs retryEnterInFullscreen = RaiseEnter(retry, inputSource);
+            Assert.Same(retry, retryEnterInFullscreen.OriginalSource);
+            Assert.False(retryEnterInFullscreen.Handled,
+                "Enter on Retry must remain available to the button even while fullscreen.");
+            Assert.True(GetPrivateField<bool>(window, "_isFullScreen"));
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BeginWindowChoiceFromCollapsedSidebar_ExpandsAndCollapseCancels(bool startFullscreen)
+    {
+        AppState state = LoadMissingState();
+        Guid slotId = Guid.NewGuid();
+        state.IsLeftPanelCollapsed = true;
+        state.LeftPanelWidth = 320;
+        state.Slots = [new SlotState { SlotId = slotId, ProcessName = "editor", Title = "Saved intent" }];
+        Assert.Equal(AppStateSaveStatus.Saved, state.SaveWithStatus());
+
+        RestoreAndClose(Visibility.Collapsed, inspect: window =>
+        {
+            var leftPanel = (Grid)window.FindName("LeftPanel");
+            var collapse = (Button)window.FindName("CollapseLeftPanelButton");
+            var filterBox = (TextBox)window.FindName("FilterBox");
+            Assert.Equal(Visibility.Collapsed, leftPanel.Visibility);
+            filterBox.Focusable = false;
+
+            if (startFullscreen)
+                Invoke(window, "ToggleFullScreen");
+            Assert.Equal(startFullscreen, GetPrivateField<bool>(window, "_isFullScreen"));
+
+            Invoke(window, "BeginWindowChoice", slotId);
+
+            Assert.False(GetPrivateField<bool>(window, "_isFullScreen"));
+            Assert.False(GetPrivateField<bool>(window, "_isLeftPanelCollapsed"));
+            Assert.Equal(Visibility.Visible, leftPanel.Visibility);
+            object? choice = GetPrivateField<object?>(window, "_windowChoice");
+            Assert.NotNull(choice);
+            Assert.Equal(slotId, choice!.GetType().GetProperty("SlotId")!.GetValue(choice));
+
+            collapse.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.True(GetPrivateField<bool>(window, "_isLeftPanelCollapsed"));
+            Assert.Equal(Visibility.Collapsed, leftPanel.Visibility);
+            Assert.Null(GetPrivateField<object?>(window, "_windowChoice"));
+        });
+    }
+
+    private static KeyEventArgs RaiseEnter(UIElement sourceElement, HwndSource presentationSource)
+    {
+        var args = new KeyEventArgs(Keyboard.PrimaryDevice, presentationSource, Environment.TickCount, Key.Enter)
+        {
+            RoutedEvent = Keyboard.PreviewKeyDownEvent
+        };
+        sourceElement.RaiseEvent(args);
+        return args;
+    }
+
+    private static T GetPrivateField<T>(object instance, string name) =>
+        (T)instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(instance)!;
+
+    private static bool IsDescendantOf(DependencyObject element, DependencyObject ancestor)
+    {
+        DependencyObject? current = element;
+        while (current != null)
+        {
+            if (ReferenceEquals(current, ancestor))
+                return true;
+            current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+        }
+        return false;
+    }
+
+    private static bool HasVisibleAncestors(DependencyObject element)
+    {
+        DependencyObject? current = element;
+        while (current != null)
+        {
+            if (current is UIElement uiElement && uiElement.Visibility != Visibility.Visible)
+                return false;
+            current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+        }
+        return true;
+    }
+
+    private static void Arrange(Grid root)
+    {
+        root.Measure(new Size(1200, 780));
+        root.Arrange(new Rect(0, 0, 1200, 780));
+        root.UpdateLayout();
+    }
+
     private void WriteState(string contents)
     {
         Directory.CreateDirectory(_tempDirectory);
@@ -446,7 +660,8 @@ public sealed class AppStateTests : IDisposable
             {
                 Volatile.Write(ref stage, "construct main window");
                 var window = new MainWindow();
-                Volatile.Write(ref stage, "restore application rules");
+                Volatile.Write(ref stage, "restore panel layout and application rules");
+                Invoke(window, "RestorePanelLayout");
                 Invoke(window, "RestoreAutoAddApps");
                 Volatile.Write(ref stage, "restore slots");
                 Invoke(window, "RestoreSlots");

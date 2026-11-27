@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 
 namespace WindowThumbWall;
 
@@ -13,6 +14,10 @@ public partial class MainWindow
         AppListLabel.Text = LocalizedText.Get("label.autoApps");
         SpecificWindowsLabel.Text = LocalizedText.Get("label.specificWindows");
         UpdateStateNotice();
+        CollapseLeftPanelButton.Content = LocalizedText.Get("button.collapseSidebar");
+        string expandSidebar = LocalizedText.Get("button.expandSidebar");
+        ExpandLeftPanelButton.ToolTip = expandSidebar;
+        AutomationProperties.SetName(ExpandLeftPanelButton, expandSidebar);
         FullScreenButton.Content = LocalizedText.Get("button.fullscreen");
         SettingsButton.Content = LocalizedText.Get("label.settings");
         ShortcutGuideButton.Content = BuildQuickHelpText();

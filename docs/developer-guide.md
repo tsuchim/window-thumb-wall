@@ -2,6 +2,20 @@
 
 This document covers local development, packaging, and release-related references for WindowThumbWall.
 
+## Contribution and Integration
+
+External contributors may submit unsigned commits. Maintainers preserve the
+author and commit history in the original pull request. Any maintainer
+correction goes onto that pull request as a signed commit. The maintainer
+completes the required testing, waits for the automated review of the final
+head, and resolves actionable feedback before merging.
+
+Use a normal merge commit and verify that GitHub reports its signature as
+valid. Read back both parents and confirm the original contributor commits
+are ancestors of the resulting `main`. The maintainer exception applies to
+the signature rule on pull requests. The other branch protections still
+apply. See GitHub's [ruleset bypass documentation](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository#granting-bypass-permissions-for-your-branch-or-tag-ruleset).
+
 ## Environment Requirements
 - Windows 10 or 11
 - .NET 10 SDK as pinned in [global.json](../global.json)
@@ -75,7 +89,7 @@ Automatic windows fill their planned position in the wall while preserving the r
 
 Use **Choose window** on a live or unresolved slot to replace its target. A new DWM registration must succeed before the app replaces the existing display. **Remove wall slot** removes the layout entry. Its specific auto-add rule stays available in the sidebar and can show its slot again. **Remove rule** removes the registration and keeps the slot.
 
-The first schema 2 save preserves the old settings in `state.json.pre-v2.bak`. A failed save is shown in the sidebar. Retry a transient failure there. If another instance saved a newer revision, save a recovery copy before restarting. A temporary file-sharing lock serializes writes to the same settings path across Windows sessions.
+The first schema 2 save preserves the old settings in `state.json.pre-v2.bak`. A failed save appears below the thumbnail wall, including when the sidebar is collapsed. Retry a transient failure there. If another instance saved a newer revision, save a recovery copy before restarting. A temporary file-sharing lock serializes writes to the same settings path across Windows sessions.
 
 Automatic addition has one persistent in-memory ordering tracker for the lifetime of the running application. At startup, the application seeds already-open eligible windows from the available Z-order state as a deterministic best-effort approximation. Windows observed through later Shell Hook create notifications are appended in observed creation order; destroy notifications remove them, so a reused numeric HWND receives a new position.
 
